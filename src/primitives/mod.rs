@@ -1,37 +1,34 @@
-use std::fmt;
+use crate::crypto;
 use std::error::Error;
+use std::fmt;
 
 pub mod file;
 
-/// The default size of hashes
-const HASH_SIZE: u8; 32;
-
-/// A type alias for Hashes to be used in the `primitives` module.
-type Hash = [u8; HASH_SIZE];
-
 /// A trait given to types that are able to be hashed.
 trait Hashable {
-    fn hash(&self) -> Vec<u8>;
+    fn hash(&self) -> crypto::Hash;
 }
 
 #[derive(Debug)]
-struct Error {
-    details: String
+struct GenericError {
+    details: String,
 }
 
-impl Error {
+impl GenericError {
     fn new(msg: &str) -> Self {
-        Self{details: msg.to_string()}
+        Self {
+            details: msg.to_string(),
+        }
     }
 }
 
-impl fmt::Display for Error {
+impl fmt::Display for GenericError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.details)
     }
 }
 
-impl Error for Error {
+impl Error for GenericError {
     fn description(&self) -> &str {
         &self.details
     }
