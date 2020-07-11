@@ -1,4 +1,5 @@
 use std::io::prelude::*;
+use std::time::{SystemTime, SystemTimeError, UNIX_EPOCH};
 
 use crate::crypto;
 
@@ -8,9 +9,14 @@ use crate::crypto;
 pub struct FileID(crypto::Hash);
 
 impl FileID {
-    fn new(filename: &str) -> Self {
-        let data = filename.as_bytes().to_vec(); // + current time
-        Self(crypto::hash_bytes(data))
+    fn new(filename: &str) -> Result<Self, SystemTimeError> {
+        let time = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs()
+            as u128;
+
+        let data = [filename.as_bytes(), time.to_string().as_bytes()]
+            .concat()
+            .to_vec();
+        Ok(Self(crypto::hash_bytes(data)))
     }
 }
 
@@ -18,6 +24,7 @@ impl FileID {
 enum FileError {
     IO(std::io::Error),
     InvalidFilepath(super::GenericError),
+    SystemTimeError(SystemTimeError),
 }
 
 /// data of the file is stored at the nodes described in the `File`'s
@@ -69,7 +76,8 @@ impl File {
 
         let file = Self {
             filename: filename.to_string(),
-            file_id: FileID::new(filename),
+            file_id: FileID::new(filename)
+                .map_err(|e| FileError::SystemTimeError(e))?,
         };
 
         Ok(file)
