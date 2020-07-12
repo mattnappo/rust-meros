@@ -20,6 +20,8 @@ impl FileID {
     }
 }
 
+impl crate::db::IsKey for FileID {}
+
 /// All possible errors that could be returned from `File`'s methods.
 enum FileError {
     IO(std::io::Error),
@@ -89,3 +91,5 @@ impl super::Hashable for File {
         [0 as u8; 32] // temp
     }
 }
+
+impl crate::db::IsValue for File {}
