@@ -1,9 +1,10 @@
-use crate::crypto::hash;
+use crate::core::Compressable;
+use crate::crypto::{encryption, hash};
 use crate::db::{IsKey, IsValue};
 
 /// All different errors that can be thrown within the `Shard` module.
 enum ShardError {
-    Invalid(crate::GenericError),
+    Invalid(crate::GeneralError),
 }
 
 /// The structure used for the identification of a shard on the meros
@@ -26,6 +27,17 @@ pub struct Shard {
     timestamp: u128,
 
     id: ShardID,
+}
+
+impl encryption::CanEncrypt for Shard {
+    fn encrypt(&self) -> Vec<u8> {}
+    fn decrypt(bytes: Vec<u8>) -> Self {}
+}
+
+impl Compressable for Shard {
+    fn compress(&self) -> Vec<u8> {}
+
+    fn decompress(bytes: Vec<u8>) -> Self {}
 }
 
 impl IsValue for Shard {}

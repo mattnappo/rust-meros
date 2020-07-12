@@ -25,7 +25,7 @@ impl IsKey for FileID {}
 /// All possible errors that could be returned from `File`'s methods.
 enum FileError {
     IO(std::io::Error),
-    InvalidFilepath(crate::GenericError),
+    InvalidFilepath(crate::GeneralError),
     SystemTimeError(SystemTimeError),
 }
 
@@ -51,7 +51,7 @@ impl File {
         file.read_to_end(&mut buf).map_err(|e| FileError::IO(e))?;
 
         let invalid_path =
-            Err(FileError::InvalidFilepath(crate::GenericError::new(
+            Err(FileError::InvalidFilepath(crate::GeneralError::new(
                 format!("{} is an invalid filepath", path.display())
                     .as_str(),
             )));
