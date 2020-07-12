@@ -1,12 +1,12 @@
 use std::io::prelude::*;
 use std::time::{SystemTime, SystemTimeError, UNIX_EPOCH};
 
-use crate::crypto;
+use crate::crypto::hash;
+use crate::db::{IsKey, IsValue};
 
 /// The structure used for the identification of a file on the meros
-/// network. It is a hash calculated in a specific way, as described in
-/// the `File` implementation.
-pub struct FileID(crypto::Hash);
+/// network.
+pub struct FileID(hash::Hash);
 
 impl FileID {
     fn new(filename: &str) -> Result<Self, SystemTimeError> {
@@ -16,25 +16,27 @@ impl FileID {
         let data = [filename.as_bytes(), time.to_string().as_bytes()]
             .concat()
             .to_vec();
-        Ok(Self(crypto::hash_bytes(data)))
+        Ok(Self(hash::hash_bytes(data)))
     }
 }
 
-impl crate::db::IsKey for FileID {}
+impl IsKey for FileID {}
 
 /// All possible errors that could be returned from `File`'s methods.
 enum FileError {
     IO(std::io::Error),
-    InvalidFilepath(super::GenericError),
+    InvalidFilepath(crate::GenericError),
     SystemTimeError(SystemTimeError),
 }
 
-/// data of the file is stored at the nodes described in the `File`'s
+/// The structure representing a file on the meros network. This structure
+/// contains valuable information about a file, but does not contain the data
+/// of the file. Rather, that is stored amongst the nodes described in the
 /// `shard_db` field.
 pub struct File {
     pub filename: String,
-    pub file_id: FileID,
     // shard_db: Option<database::Database<Shard>>,
+    pub id: FileID,
 }
 
 impl File {
@@ -48,37 +50,23 @@ impl File {
         let mut buf = Vec::new();
         file.read_to_end(&mut buf).map_err(|e| FileError::IO(e))?;
 
+        let invalid_path =
+            Err(FileError::InvalidFilepath(crate::GenericError::new(
+                format!("{} is an invalid filepath", path.display())
+                    .as_str(),
+            )));
+
         let filename = match path.file_name() {
             Some(name) => match name.to_str() {
                 Some(s) => s,
-                None => {
-                    return Err(FileError::InvalidFilepath(
-                        super::GenericError::new(
-                            format!(
-                                "{} is an invalid filepath",
-                                path.display()
-                            )
-                            .as_str(),
-                        ),
-                    ))
-                }
+                None => return invalid_path,
             },
-            None => {
-                return Err(FileError::InvalidFilepath(
-                    super::GenericError::new(
-                        format!(
-                            "{} is an invalid filepath",
-                            path.display()
-                        )
-                        .as_str(),
-                    ),
-                ))
-            }
+            None => return invalid_path,
         };
 
         let file = Self {
             filename: filename.to_string(),
-            file_id: FileID::new(filename)
+            id: FileID::new(filename)
                 .map_err(|e| FileError::SystemTimeError(e))?,
         };
 
@@ -87,9 +75,9 @@ impl File {
 }
 
 impl super::Hashable for File {
-    fn hash(&self) -> crypto::Hash {
+    fn hash(&self) -> hash::Hash {
         [0 as u8; 32] // temp
     }
 }
 
-impl crate::db::IsValue for File {}
+impl IsValue for File {}
