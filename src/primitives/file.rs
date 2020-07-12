@@ -20,7 +20,7 @@ impl FileID {
     }
 }
 
-impl super::id::IsKey for FileID {}
+impl crate::db::IsKey for FileID {}
 
 /// All possible errors that could be returned from `File`'s methods.
 enum FileError {
@@ -92,4 +92,4 @@ impl super::Hashable for File {
     }
 }
 
-impl super::id::IsValue for File {}
+impl crate::db::IsValue for File {}

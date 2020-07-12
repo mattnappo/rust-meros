@@ -3,7 +3,6 @@ use std::error::Error;
 use std::fmt;
 
 pub mod file;
-pub mod id;
 
 /// A trait given to types that are able to be hashed.
 trait Hashable {
