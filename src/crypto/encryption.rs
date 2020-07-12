@@ -1,11 +1,20 @@
-use ecies_ed25519::{decrypt, encrypt, PublicKey, SecretKey};
-use std::fs::File;
+use ecies_ed25519::{
+    decrypt, encrypt, generate_keypair, PublicKey, SecretKey,
+};
+use rand;
+use std::{
+    fs::{create_dir_all, File},
+    io::Write,
+    path::Path,
+};
 
 use crate::CanSerialize;
 
 trait IsKey {}
 impl IsKey for PublicKey {}
 impl IsKey for SecretKey {}
+
+const KEY_LOCATION: &str = "./data/keys/";
 
 /// All of the errors that can be thrown by the Crypto module.
 pub enum CryptoError {
@@ -14,63 +23,94 @@ pub enum CryptoError {
     IOError(std::io::Error),
 }
 
+/// Specify the type of key and the name of the key.
+enum KeyType {
+    Public(String),
+    Private(String),
+}
+
+/// A handy shorthand type representing a keypair.
+type Keypair = (SecretKey, PublicKey);
+
 /// Differnet ways to encrypt and decrypt data. This struct enables quick keypair
 /// generation, and encryption and with a public key, private key, or both.
 pub struct EncryptionOptions {
     pub_key: Option<PublicKey>, // Encrypt bytes with a public key
     priv_key: Option<SecretKey>, // Encrypt bytes with priv_key, then pub_key
-
-    // Generate a new keypair, then encrypt/decrypt with that pub/priv key.
-    // Export that key at the path stored in the string.
-    gen_keypair: (bool, String),
 }
 
 impl EncryptionOptions {
-    fn default_encrypt(key: &PublicKey) {
+    fn default_encrypt(key: PublicKey) -> EncryptionOptions {
         EncryptionOptions {
             pub_key: Some(key),
             priv_key: None,
-            gen_keypair: false,
         }
     }
 
-    fn default_decrypt(key: &SecretKey) {
+    fn default_decrypt(key: SecretKey) -> EncryptionOptions {
         EncryptionOptions {
             pub_key: None,
-            Priv_key: Some(key),
-            gen_keypair: false,
+            priv_key: Some(key),
         }
     }
 }
 
-/// Write a key to the disk.
-fn write_key<K>(keys: [K; 2], name: &str) -> Option<CryptoError>
+/// Write a single key to the disk.
+fn write_key<K>(key: &K, key_type: KeyType) -> Result<(), CryptoError>
 where
-    K: IsKey,
+    K: IsKey + serde::Serialize,
 {
-    for i in 0..2 {
-        let key = bincode::serialize(&key[i])
-            .map_err(|e| CryptoError::SerializationError(e))?;
+    let key = bincode::serialize(key)
+        .map_err(|e| CryptoError::SerializationError(e))?;
 
-        let mut file = File::create(
-            format!(
-                "./data/keys/{}.{}",
-                name,
-                match i {
-                    0 => "priv",
-                    1 => "pub",
-                }
-            )
-            .as_str(),
-        );
-    }
+    let (name, extension) = match key_type {
+        KeyType::Private(name) => (name, "priv"),
+        KeyType::Public(name) => (name, "pub"),
+    };
+
+    let mut file = File::create(
+        format!("{}{}.{}", KEY_LOCATION, name, extension,).as_str(),
+    )
+    .map_err(|e| CryptoError::IOError(e))?;
+
+    file.write_all(&key[..])
+        .map_err(|e| CryptoError::IOError(e))?;
+    Ok(())
+}
+
+/// Write a keypair to the disk. keys[0] = priv, keys[1] = pub.
+fn write_keypair(
+    pair: (&SecretKey, &PublicKey),
+    name: &str,
+) -> Result<(), CryptoError> {
+    create_dir_all(Path::new(KEY_LOCATION))
+        .map_err(|e| CryptoError::IOError(e))?;
+
+    write_key(pair.0, KeyType::Private(name.to_string()))?;
+    write_key(pair.1, KeyType::Public(name.to_string()))?;
+    Ok(())
 }
 
 /// Generate a public-private keypair and write to disk with the given name.
-fn gen_keypair(name: &str) -> Result<(PublicKey, SecretKey), CryptoError> {
-    let (priv_key, pub_key) = generate_keypair(&mut rand::thread_rng());
-    write_keypair(priv_key)
+fn gen_keypair(name: &str) -> Result<Keypair, CryptoError> {
+    let mut csprng = rand::thread_rng();
+    let (priv_key, pub_key) = generate_keypair(&mut csprng);
+    write_keypair((&priv_key, &pub_key), name)?;
+    Ok((priv_key, pub_key))
 }
+
+/*
+fn load_key<K>(name: &str) -> Result<K, CryptoError>
+where
+    K: IsKey + serde::Serialize,
+{
+
+}
+
+fn load_keypair(name: &str) -> Result<Keypair, CryptoError> {
+
+}
+*/
 
 pub trait CanEncrypt<T>
 where
@@ -79,26 +119,21 @@ where
     fn encrypt(
         &self,
         options: EncryptionOptions,
-    ) -> Result<Vec<u8>, EncryptionError> {
+    ) -> Result<Vec<u8>, CryptoError> {
         let mut csprng = rand::thread_rng();
-        let mut bytes = <T as CanSerialize>::to_bytes()
-            .map_err(|e| CryptoError::SerializationError(e))?;
+        let bytes = &(<T as CanSerialize>::to_bytes()
+            .map_err(|e| CryptoError::SerializationError(e))?)[..];
 
-        // Encrypt with a private key if there is as private key and a public key
-        if let Some(key) = options.priv_key && let Some(_) = options.pub_key {
-            let bytes: Vec<u8> = encrypt(&options.priv_key, bytes, &mut csprng).map_err(|e| CryptoError::EncryptionError(e))?;
+        if let Some(pub_key) = options.pub_key {
+            let bytes = &(encrypt(&pub_key, bytes, &mut csprng)
+                .map_err(|e| CryptoError::EncryptionError(e))?)[..];
         }
 
-        if options.gen_keypair {
-            gen_keypair()
-        }
-
-        // Encrypt with a public key if there is a public key
-        if let Some(key) = options.pub_key {
-            let bytes: Vec<u8> =
-                encrypt(&options.pub_key, bytes, &mut csprng)?;
-        }
+        Ok(bytes.to_vec())
     }
 
-    fn decrypt(bytes: Vec<u8>) -> Self;
+    fn decrypt(
+        bytes: Vec<u8>,
+        options: EncryptionOptions,
+    ) -> Result<T, CryptoError>;
 }

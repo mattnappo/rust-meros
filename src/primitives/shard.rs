@@ -1,6 +1,7 @@
 use crate::core::Compressable;
 use crate::crypto::{encryption, hash};
 use crate::db::{IsKey, IsValue};
+use serde::{Deserialize, Serialize};
 
 /// All of the errors that a `Shard` method could throw.
 enum ShardError {
@@ -9,6 +10,7 @@ enum ShardError {
 
 /// The structure used for the identification of a shard on the meros
 /// network.
+#[derive(Serialize, Deserialize)]
 pub struct ShardID(hash::Hash);
 
 impl ShardID {
@@ -45,7 +47,7 @@ impl Compressable for Shard {
     fn decompress(bytes: Vec<u8>) -> Self {}
 }
 */
-
+/*
 impl crate::CanSerialize for Shard {
     fn to_bytes(&self) -> bincode::Result<Vec<u8>> {
         bincode::serialize(self)?
@@ -55,5 +57,5 @@ impl crate::CanSerialize for Shard {
         bincode::deserialize(&bytes[..])?
     }
 }
-
+*/
 impl IsValue for Shard {}

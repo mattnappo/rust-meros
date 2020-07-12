@@ -11,3 +11,4 @@ blake3 = "0.3.5"
 bincode = "1.2.1"
 serde = { version = "1.0.111", features = ["derive"] }
 ecies-ed25519 = { version = "0.4.0", features = ["serde"] }
+rand = "0.7.3"
