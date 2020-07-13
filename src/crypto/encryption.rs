@@ -155,3 +155,18 @@ pub trait CanEncrypt: CanSerialize {
         )))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_encrypt() {}
+
+    #[test]
+    fn test_decrypt() {}
+
+    #[test]
+    fn test_gen_keypair() {}
+
+    #[test]
+    fn test_load_keypair() {}
+}
