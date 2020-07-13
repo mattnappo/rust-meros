@@ -9,3 +9,8 @@
 
 *Refactoring*
  - Make all of the XError types MODError. So, the crypto module has only a CryptoError type, etc...
+ - Make the CanSerialize from_bytes() generic
+
+*Other*
+ - crypto load key
+ - crypto decrypt

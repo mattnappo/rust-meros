@@ -112,17 +112,16 @@ fn load_keypair(name: &str) -> Result<Keypair, CryptoError> {
 }
 */
 
-pub trait CanEncrypt<T>
-where
-    T: CanSerialize,
-{
+pub trait CanEncrypt: CanSerialize {
     fn encrypt(
         &self,
         options: EncryptionOptions,
     ) -> Result<Vec<u8>, CryptoError> {
         let mut csprng = rand::thread_rng();
-        let bytes = &(<T as CanSerialize>::to_bytes()
-            .map_err(|e| CryptoError::SerializationError(e))?)[..];
+        let bytes = self
+            .to_bytes()
+            .map_err(|e| CryptoError::SerializationError(e))?;
+        let bytes = &bytes[..];
 
         if let Some(pub_key) = options.pub_key {
             let bytes = &(encrypt(&pub_key, bytes, &mut csprng)
@@ -132,8 +131,10 @@ where
         Ok(bytes.to_vec())
     }
 
-    fn decrypt(
+    fn decrypt<T>(
         bytes: Vec<u8>,
         options: EncryptionOptions,
-    ) -> Result<T, CryptoError>;
+    ) -> Result<T, CryptoError>
+    where
+        T: CanSerialize;
 }
