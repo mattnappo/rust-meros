@@ -21,6 +21,7 @@ pub enum CryptoError {
     SerializationError(bincode::Error),
     EncryptionError(ecies_ed25519::Error),
     IOError(std::io::Error),
+    NullKey(crate::GeneralError),
 }
 
 /// Specify the type of key and the name of the key.
@@ -123,8 +124,8 @@ pub trait CanEncrypt: CanSerialize {
             .map_err(|e| CryptoError::SerializationError(e))?;
         let bytes = &bytes[..];
 
-        if let Some(pub_key) = options.pub_key {
-            let bytes = &(encrypt(&pub_key, bytes, &mut csprng)
+        if let Some(key) = options.pub_key {
+            let bytes = &(encrypt(&key, bytes, &mut csprng)
                 .map_err(|e| CryptoError::EncryptionError(e))?)[..];
         }
 
@@ -136,5 +137,21 @@ pub trait CanEncrypt: CanSerialize {
         options: EncryptionOptions,
     ) -> Result<T, CryptoError>
     where
-        T: CanSerialize;
+        T: CanSerialize,
+    {
+        if let Some(key) = options.priv_key {
+            let decrypted = decrypt(&key, &bytes[..])
+                .map_err(|e| CryptoError::EncryptionError(e))?;
+
+            return match T::from_bytes(bytes) {
+                Ok(reconstructed) => Ok(reconstructed),
+                Err(e) => Err(CryptoError::SerializationError(e)),
+            };
+            //.map_err(|e| CryptoError::SerializationError(e))?;
+        }
+
+        Err(CryptoError::NullKey(crate::GeneralError::new(
+            "cannot decrypt with a null private key",
+        )))
+    }
 }
