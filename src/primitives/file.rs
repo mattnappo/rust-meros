@@ -11,7 +11,7 @@ use crate::db::{IsKey, IsValue};
 pub struct FileID(hash::Hash);
 
 impl FileID {
-    fn new(
+    pub fn new(
         filename: &str,
         bytes: &Vec<u8>,
     ) -> Result<Self, SystemTimeError> {
@@ -30,7 +30,7 @@ impl IsKey for FileID {}
 
 /// All possible errors that could be returned from `File`'s methods.
 #[derive(Debug)]
-enum FileError {
+pub enum FileError {
     IO(std::io::Error),
     InvalidFilepath(crate::GeneralError),
     SystemTimeError(SystemTimeError),
@@ -52,7 +52,7 @@ impl File {
     /// This method does not distribute a file over the meros network.
     /// However, it does prepare the file for sharding by pre-calculating
     /// the shards and assigning them to null nodes (temporarily).
-    fn new(path: &std::path::Path) -> Result<Self, FileError> {
+    pub fn new(path: &std::path::Path) -> Result<Self, FileError> {
         let mut file =
             std::fs::File::open(path).map_err(|e| FileError::IO(e))?;
 
@@ -141,16 +141,30 @@ impl crate::crypto::encryption::CanEncrypt for File {
 */
 
 impl crate::CanSerialize for File {
-    type S<'a> = Self;
+    type S = Self;
+    fn to_bytes(&self) -> bincode::Result<Vec<u8>> {
+        bincode::serialize(self)
+    }
+    fn from_bytes(bytes: Vec<u8>) -> bincode::Result<Self::S> {
+        bincode::deserialize(&bytes[..])
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::CanSerialize;
     use std::path::Path;
 
     #[test]
     fn test_new_file() {
         File::new(Path::new("testfile.txt")).unwrap();
+    }
+
+    #[test]
+    fn test_to_bytes() {
+        let file = File::new(Path::new("testfile.txt")).unwrap();
+        let bytes = file.to_bytes().unwrap();
+        println!("bytes: {:?}", bytes);
     }
 }

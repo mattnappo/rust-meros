@@ -114,6 +114,7 @@ fn load_keypair(name: &str) -> Result<Keypair, CryptoError> {
 }
 */
 
+/*
 pub trait CanEncrypt: CanSerialize {
     type D;
 
@@ -150,3 +151,5 @@ mod tests {
     #[test]
     fn test_load_keypair() {}
 }
+
+*/
