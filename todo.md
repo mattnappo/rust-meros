@@ -14,3 +14,9 @@
 *Other*
  - crypto load key
  - crypto decrypt
+
+
+
+*Problems*
+ - Trais need to be more generalized
+ - Check the typing of the `decrypt<T>` method and `from_bytes<T>` method. Those make no sense because they are not properly restricted.

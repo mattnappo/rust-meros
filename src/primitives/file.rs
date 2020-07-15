@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::io::prelude::*;
 use std::time::{SystemTime, SystemTimeError, UNIX_EPOCH};
 
@@ -6,7 +7,7 @@ use crate::db::{IsKey, IsValue};
 
 /// The structure used for the identification of a file on the meros
 /// network.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FileID(hash::Hash);
 
 impl FileID {
@@ -39,7 +40,7 @@ enum FileError {
 /// contains valuable information about a file, but does not contain the data
 /// of the file. Rather, that is stored amongst the nodes described in the
 /// `shard_db` field.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct File {
     pub filename: String,
     // shard_db: Option<database::Database<Shard>>,
@@ -64,6 +65,7 @@ impl File {
                     .as_str(),
             )));
 
+        // clean this up somehow
         let filename = match path.file_name() {
             Some(name) => match name.to_str() {
                 Some(s) => s,
@@ -90,6 +92,20 @@ impl super::Hashable for File {
 
 impl IsValue for File {}
 
+impl crate::crypto::encryption::CanEncrypt for File {}
+
+impl crate::CanSerialize for File {
+    type S = Self;
+
+    fn to_bytes(&self) -> bincode::Result<Vec<u8>> {
+        bincode::serialize(self)
+    }
+
+    fn from_bytes(bytes: Vec<u8>) -> bincode::Result<Self> {
+        bincode::deserialize(&bytes[..])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -97,7 +113,6 @@ mod tests {
 
     #[test]
     fn test_new_file() {
-        let file = File::new(Path::new("testfile.txt")).unwrap();
-        println!("{:?}", file);
+        File::new(Path::new("testfile.txt")).unwrap();
     }
 }

@@ -32,10 +32,7 @@ impl std::error::Error for GeneralError {
 
 /// The trait that enables serialization.
 pub trait CanSerialize {
+    type S;
     fn to_bytes(&self) -> bincode::Result<Vec<u8>>;
-    fn from_bytes<T>(bytes: Vec<u8>) -> bincode::Result<T>
-    where
-        T: CanSerialize;
-
-    // fn from_bytes(bytes: Vec<u8>) -> Self;
+    fn from_bytes(bytes: Vec<u8>) -> bincode::Result<Self::S>;
 }

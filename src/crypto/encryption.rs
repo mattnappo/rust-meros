@@ -3,7 +3,6 @@ use ecies_ed25519::{
 };
 use rand;
 use std::{
-    fmt::Display,
     fs::{create_dir_all, File},
     io::Write,
     path::Path,
@@ -116,6 +115,8 @@ fn load_keypair(name: &str) -> Result<Keypair, CryptoError> {
 */
 
 pub trait CanEncrypt: CanSerialize {
+    type D;
+
     fn encrypt(
         &self,
         options: EncryptionOptions,
@@ -135,18 +136,18 @@ pub trait CanEncrypt: CanSerialize {
         };
     }
 
-    fn decrypt<T>(
+    fn decrypt(
         bytes: Vec<u8>,
         options: EncryptionOptions,
-    ) -> Result<T, CryptoError>
+    ) -> Result<Self::D, CryptoError>
     where
-        T: CanSerialize,
+        Self::D: CanEncrypt,
     {
         if let Some(key) = options.priv_key {
             let decrypted = decrypt(&key, &bytes[..])
                 .map_err(|e| CryptoError::EncryptionError(e))?;
 
-            return match T::from_bytes(bytes) {
+            return match <Self::D as CanSerialize>::from_bytes(bytes) {
                 Ok(reconstructed) => Ok(reconstructed),
                 Err(e) => Err(CryptoError::SerializationError(e)),
             };
@@ -162,11 +163,12 @@ pub trait CanEncrypt: CanSerialize {
 #[cfg(test)]
 mod tests {
     use crate::primitives::file::File;
+    use std::path::Path;
 
     #[test]
     fn test_encrypt() {
-        // make a file
-        // serialize it
+        let bytes =
+            File::new(Path::new("testfile.txt")).unwrap().to_bytes();
         // encrypt it
         // test it
     }
