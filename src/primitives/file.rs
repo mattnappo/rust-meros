@@ -167,4 +167,15 @@ mod tests {
         let bytes = file.to_bytes().unwrap();
         println!("bytes: {:?}", bytes);
     }
+
+    #[test]
+    fn test_from_bytes() {
+        let serialized = File::new(Path::new("testfile.txt"))
+            .unwrap()
+            .to_bytes()
+            .unwrap();
+
+        let deserialized = File::from_bytes(serialized).unwrap();
+        println!("deserialized file: {:?}", deserialized);
+    }
 }
