@@ -3,6 +3,7 @@ use ecies_ed25519::{
 };
 use rand;
 use std::{
+    fmt::Display,
     fs::{create_dir_all, File},
     io::Write,
     path::Path,
@@ -17,6 +18,7 @@ impl IsKey for SecretKey {}
 const KEY_LOCATION: &str = "./data/keys/";
 
 /// All of the errors that can be thrown by the Crypto module.
+#[derive(Debug)]
 pub enum CryptoError {
     SerializationError(bincode::Error),
     EncryptionError(ecies_ed25519::Error),
@@ -124,12 +126,13 @@ pub trait CanEncrypt: CanSerialize {
             .map_err(|e| CryptoError::SerializationError(e))?;
         let bytes = &bytes[..];
 
-        if let Some(key) = options.pub_key {
-            let bytes = &(encrypt(&key, bytes, &mut csprng)
-                .map_err(|e| CryptoError::EncryptionError(e))?)[..];
-        }
-
-        Ok(bytes.to_vec())
+        return match options.pub_key {
+            Some(key) => encrypt(&key, bytes, &mut csprng)
+                .map_err(|e| CryptoError::EncryptionError(e)),
+            None => Err(CryptoError::NullKey(crate::GeneralError::new(
+                "cannot encrypt with a null public key",
+            ))),
+        };
     }
 
     fn decrypt<T>(
@@ -158,8 +161,15 @@ pub trait CanEncrypt: CanSerialize {
 
 #[cfg(test)]
 mod tests {
+    use crate::primitives::file::File;
+
     #[test]
-    fn test_encrypt() {}
+    fn test_encrypt() {
+        // make a file
+        // serialize it
+        // encrypt it
+        // test it
+    }
 
     #[test]
     fn test_decrypt() {}

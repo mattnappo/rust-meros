@@ -6,6 +6,7 @@ use crate::db::{IsKey, IsValue};
 
 /// The structure used for the identification of a file on the meros
 /// network.
+#[derive(Debug)]
 pub struct FileID(hash::Hash);
 
 impl FileID {
@@ -23,6 +24,7 @@ impl FileID {
 impl IsKey for FileID {}
 
 /// All possible errors that could be returned from `File`'s methods.
+#[derive(Debug)]
 enum FileError {
     IO(std::io::Error),
     InvalidFilepath(crate::GeneralError),
@@ -33,6 +35,7 @@ enum FileError {
 /// contains valuable information about a file, but does not contain the data
 /// of the file. Rather, that is stored amongst the nodes described in the
 /// `shard_db` field.
+#[derive(Debug)]
 pub struct File {
     pub filename: String,
     // shard_db: Option<database::Database<Shard>>,
@@ -81,3 +84,14 @@ impl super::Hashable for File {
 }
 
 impl IsValue for File {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn test_new_file() {
+        File::new(Path::new("testfile.txt")).unwrap();
+    }
+}
