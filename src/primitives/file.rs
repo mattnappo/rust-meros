@@ -10,13 +10,17 @@ use crate::db::{IsKey, IsValue};
 pub struct FileID(hash::Hash);
 
 impl FileID {
-    fn new(filename: &str) -> Result<Self, SystemTimeError> {
+    fn new(
+        filename: &str,
+        bytes: &Vec<u8>,
+    ) -> Result<Self, SystemTimeError> {
         let time = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs()
             as u128;
 
-        let data = [filename.as_bytes(), time.to_string().as_bytes()]
-            .concat()
-            .to_vec();
+        let data =
+            [filename.as_bytes(), &bytes[..], time.to_string().as_bytes()]
+                .concat()
+                .to_vec();
         Ok(Self(hash::hash_bytes(data)))
     }
 }
@@ -50,6 +54,7 @@ impl File {
     fn new(path: &std::path::Path) -> Result<Self, FileError> {
         let mut file =
             std::fs::File::open(path).map_err(|e| FileError::IO(e))?;
+
         let mut buf = Vec::new();
         file.read_to_end(&mut buf).map_err(|e| FileError::IO(e))?;
 
@@ -69,7 +74,7 @@ impl File {
 
         let file = Self {
             filename: filename.to_string(),
-            id: FileID::new(filename)
+            id: FileID::new(filename, &buf)
                 .map_err(|e| FileError::SystemTimeError(e))?,
         };
 
@@ -92,6 +97,7 @@ mod tests {
 
     #[test]
     fn test_new_file() {
-        File::new(Path::new("testfile.txt")).unwrap();
+        let file = File::new(Path::new("testfile.txt")).unwrap();
+        println!("{:?}", file);
     }
 }
