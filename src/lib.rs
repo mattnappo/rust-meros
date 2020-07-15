@@ -30,7 +30,7 @@ impl std::error::Error for GeneralError {
     }
 }
 
-/// The trait that enables serialization.
+/// The trait that enables serialization and deserialization.
 pub trait CanSerialize {
     type S;
     fn to_bytes(&self) -> bincode::Result<Vec<u8>>;

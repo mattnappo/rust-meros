@@ -120,44 +120,12 @@ pub trait CanEncrypt: CanSerialize {
     fn encrypt(
         &self,
         options: EncryptionOptions,
-    ) -> Result<Vec<u8>, CryptoError> {
-        let mut csprng = rand::thread_rng();
-        let bytes = self
-            .to_bytes()
-            .map_err(|e| CryptoError::SerializationError(e))?;
-        let bytes = &bytes[..];
-
-        return match options.pub_key {
-            Some(key) => encrypt(&key, bytes, &mut csprng)
-                .map_err(|e| CryptoError::EncryptionError(e)),
-            None => Err(CryptoError::NullKey(crate::GeneralError::new(
-                "cannot encrypt with a null public key",
-            ))),
-        };
-    }
+    ) -> Result<Vec<u8>, CryptoError>;
 
     fn decrypt(
         bytes: Vec<u8>,
         options: EncryptionOptions,
-    ) -> Result<Self::D, CryptoError>
-    where
-        Self::D: CanEncrypt,
-    {
-        if let Some(key) = options.priv_key {
-            let decrypted = decrypt(&key, &bytes[..])
-                .map_err(|e| CryptoError::EncryptionError(e))?;
-
-            return match <Self::D as CanSerialize>::from_bytes(bytes) {
-                Ok(reconstructed) => Ok(reconstructed),
-                Err(e) => Err(CryptoError::SerializationError(e)),
-            };
-            //.map_err(|e| CryptoError::SerializationError(e))?;
-        }
-
-        Err(CryptoError::NullKey(crate::GeneralError::new(
-            "cannot decrypt with a null private key",
-        )))
-    }
+    ) -> Result<Self::D, CryptoError>;
 }
 
 #[cfg(test)]
