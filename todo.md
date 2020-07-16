@@ -15,7 +15,10 @@
  - crypto load key
  - crypto decrypt
 
-
+*Security*
+ - Shard digital signatures
+ - Checksums on `Shard`s and `File`s
+ - Checking methods for validation in `from_bytes` reconstruction
 
 *Problems*
  - Trais need to be more generalized
