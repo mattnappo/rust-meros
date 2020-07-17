@@ -14,3 +14,16 @@
 *Other*
  - crypto load key
  - crypto decrypt
+
+*Other*
+ - Make those encryption methods a macro plz
+ - Remove the stupid encryption options type (just overengineering)
+
+*Security*
+ - Shard digital signatures
+ - Checksums on `Shard`s and `File`s
+ - Checking methods for validation in `from_bytes` reconstruction
+
+*Problems*
+ - Trais need to be more generalized
+ - Check the typing of the `decrypt<T>` method and `from_bytes<T>` method. Those make no sense because they are not properly restricted.

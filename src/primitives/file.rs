@@ -1,21 +1,29 @@
+use serde::{Deserialize, Serialize};
 use std::io::prelude::*;
 use std::time::{SystemTime, SystemTimeError, UNIX_EPOCH};
 
-use crate::crypto::hash;
-use crate::db::{IsKey, IsValue};
+use crate::{
+    crypto::{encryption::CanEncrypt, hash},
+    db::{IsKey, IsValue},
+};
 
 /// The structure used for the identification of a file on the meros
 /// network.
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FileID(hash::Hash);
 
 impl FileID {
-    fn new(filename: &str) -> Result<Self, SystemTimeError> {
+    pub fn new(
+        filename: &str,
+        bytes: &Vec<u8>,
+    ) -> Result<Self, SystemTimeError> {
         let time = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs()
             as u128;
 
-        let data = [filename.as_bytes(), time.to_string().as_bytes()]
-            .concat()
-            .to_vec();
+        let data =
+            [filename.as_bytes(), &bytes[..], time.to_string().as_bytes()]
+                .concat()
+                .to_vec();
         Ok(Self(hash::hash_bytes(data)))
     }
 }
@@ -23,7 +31,8 @@ impl FileID {
 impl IsKey for FileID {}
 
 /// All possible errors that could be returned from `File`'s methods.
-enum FileError {
+#[derive(Debug)]
+pub enum FileError {
     IO(std::io::Error),
     InvalidFilepath(crate::GeneralError),
     SystemTimeError(SystemTimeError),
@@ -33,6 +42,7 @@ enum FileError {
 /// contains valuable information about a file, but does not contain the data
 /// of the file. Rather, that is stored amongst the nodes described in the
 /// `shard_db` field.
+#[derive(Debug, Serialize, Deserialize)]
 pub struct File {
     pub filename: String,
     // shard_db: Option<database::Database<Shard>>,
@@ -44,9 +54,10 @@ impl File {
     /// This method does not distribute a file over the meros network.
     /// However, it does prepare the file for sharding by pre-calculating
     /// the shards and assigning them to null nodes (temporarily).
-    fn new(path: &std::path::Path) -> Result<Self, FileError> {
+    pub fn new(path: &std::path::Path) -> Result<Self, FileError> {
         let mut file =
             std::fs::File::open(path).map_err(|e| FileError::IO(e))?;
+
         let mut buf = Vec::new();
         file.read_to_end(&mut buf).map_err(|e| FileError::IO(e))?;
 
@@ -56,6 +67,7 @@ impl File {
                     .as_str(),
             )));
 
+        // clean this up somehow
         let filename = match path.file_name() {
             Some(name) => match name.to_str() {
                 Some(s) => s,
@@ -66,7 +78,7 @@ impl File {
 
         let file = Self {
             filename: filename.to_string(),
-            id: FileID::new(filename)
+            id: FileID::new(filename, &buf)
                 .map_err(|e| FileError::SystemTimeError(e))?,
         };
 
@@ -81,3 +93,43 @@ impl super::Hashable for File {
 }
 
 impl IsValue for File {}
+
+impl crate::CanSerialize for File {
+    type S = Self;
+    fn to_bytes(&self) -> bincode::Result<Vec<u8>> {
+        bincode::serialize(self)
+    }
+    fn from_bytes(bytes: Vec<u8>) -> bincode::Result<Self::S> {
+        bincode::deserialize(&bytes[..])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::CanSerialize;
+    use std::path::Path;
+
+    #[test]
+    fn test_new_file() {
+        File::new(Path::new("testfile.txt")).unwrap();
+    }
+
+    #[test]
+    fn test_to_bytes() {
+        let file = File::new(Path::new("testfile.txt")).unwrap();
+        let bytes = file.to_bytes().unwrap();
+        println!("bytes: {:?}", bytes);
+    }
+
+    #[test]
+    fn test_from_bytes() {
+        let file = File::new(Path::new("testfile.txt")).unwrap();
+        let serialized = file.to_bytes().unwrap();
+
+        let deserialized = File::from_bytes(serialized).unwrap();
+        println!("deserialized file: {:?}", deserialized);
+
+        // assert_eq!(file, deserialized);
+    }
+}
