@@ -13,6 +13,7 @@ use std::{
 };
 
 trait IsKey {}
+
 impl IsKey for PublicKey {}
 impl IsKey for SecretKey {}
 
@@ -86,7 +87,7 @@ pub fn gen_keypair(
 
 fn load_key<K>(key_type: &KeyType) -> Result<K, CryptoError>
 where
-    K: IsKey + serde::Serialize,
+    K: IsKey,
 {
     // Get key path
     let mut loc = "";
@@ -106,7 +107,8 @@ where
         .map_err(|e| CryptoError::IOError(e))?;
 
     // Deserialize the key
-    K::from_bytes(key_buf).map_err(|e| CryptoError::EncryptionError(e))
+    bincode::deserialize(&key_buf[..])
+        .map_err(|e| CryptoError::SerializationError(e))
 }
 
 /*
