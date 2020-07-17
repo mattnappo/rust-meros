@@ -12,6 +12,8 @@ use std::{
     path::Path,
 };
 
+// A trait constrait for types that are keys
+// (ed25519 public and private key only)
 trait IsKey {}
 
 impl IsKey for PublicKey {}
@@ -85,29 +87,27 @@ pub fn gen_keypair(
     Ok((priv_key, pub_key))
 }
 
-fn load_key<K>(key_type: &KeyType) -> Result<K, CryptoError>
+/// Load a key from the disk given the key name and type.
+fn load_key<'a, K>(key_type: &KeyType) -> Result<K, CryptoError>
 where
-    K: IsKey,
+    K: IsKey + serde::Deserialize<'a>,
 {
     // Get key path
-    let mut loc = "";
-    match key_type {
-        KeyType::Public(name) => {
-            loc = format!("{}{}.pub", KEY_LOCATION, name).as_str()
-        }
-        KeyType::Private(name) => {
-            loc = format!("{}{}.priv", KEY_LOCATION, name).as_str()
-        }
-    }
+    let loc = match key_type {
+        KeyType::Public(name) => format!("{}{}.pub", KEY_LOCATION, name),
+        KeyType::Private(name) => format!("{}{}.priv", KEY_LOCATION, name),
+    };
 
     // Read the key as bytes
-    let file = StdFile::open(loc).map_err(|e| CryptoError::IOError(e))?;
+    let mut file = StdFile::open(loc.as_str())
+        .map_err(|e| CryptoError::IOError(e))?;
     let mut key_buf = Vec::new();
+    let key_buf_copy = key_buf.clone();
     file.read_to_end(&mut key_buf)
         .map_err(|e| CryptoError::IOError(e))?;
 
     // Deserialize the key
-    bincode::deserialize(&key_buf[..])
+    bincode::deserialize(&key_buf_copy[..])
         .map_err(|e| CryptoError::SerializationError(e))
 }
 
