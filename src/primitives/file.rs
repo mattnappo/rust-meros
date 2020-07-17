@@ -2,8 +2,10 @@ use serde::{Deserialize, Serialize};
 use std::io::prelude::*;
 use std::time::{SystemTime, SystemTimeError, UNIX_EPOCH};
 
-use crate::crypto::hash;
-use crate::db::{IsKey, IsValue};
+use crate::{
+    crypto::{encryption::CanEncrypt, hash},
+    db::{IsKey, IsValue},
+};
 
 /// The structure used for the identification of a file on the meros
 /// network.
@@ -92,54 +94,6 @@ impl super::Hashable for File {
 
 impl IsValue for File {}
 
-/*
-impl crate::crypto::encryption::CanEncrypt for File {
-    type D;
-
-    fn encrypt(
-        &self,
-        options: EncryptionOptions,
-    ) -> Result<Vec<u8>, CryptoError> {
-        let mut csprng = rand::thread_rng();
-        let bytes = self
-            .to_bytes()
-            .map_err(|e| CryptoError::SerializationError(e))?;
-        let bytes = &bytes[..];
-
-        return match options.pub_key {
-            Some(key) => encrypt(&key, bytes, &mut csprng)
-                .map_err(|e| CryptoError::EncryptionError(e)),
-            None => Err(CryptoError::NullKey(crate::GeneralError::new(
-                "cannot encrypt with a null public key",
-            ))),
-        };
-    }
-
-    fn decrypt(
-        bytes: Vec<u8>,
-        options: EncryptionOptions,
-    ) -> Result<Self::D, CryptoError>
-    where
-        Self::D: CanEncrypt,
-    {
-        if let Some(key) = options.priv_key {
-            let decrypted = decrypt(&key, &bytes[..])
-                .map_err(|e| CryptoError::EncryptionError(e))?;
-
-            return match <Self::D as CanSerialize>::from_bytes(bytes) {
-                Ok(reconstructed) => Ok(reconstructed),
-                Err(e) => Err(CryptoError::SerializationError(e)),
-            };
-            //.map_err(|e| CryptoError::SerializationError(e))?;
-        }
-
-        Err(CryptoError::NullKey(crate::GeneralError::new(
-            "cannot decrypt with a null private key",
-        )))
-    }
-}
-*/
-
 impl crate::CanSerialize for File {
     type S = Self;
     fn to_bytes(&self) -> bincode::Result<Vec<u8>> {
@@ -170,12 +124,12 @@ mod tests {
 
     #[test]
     fn test_from_bytes() {
-        let serialized = File::new(Path::new("testfile.txt"))
-            .unwrap()
-            .to_bytes()
-            .unwrap();
+        let file = File::new(Path::new("testfile.txt")).unwrap();
+        let serialized = file.to_bytes().unwrap();
 
         let deserialized = File::from_bytes(serialized).unwrap();
         println!("deserialized file: {:?}", deserialized);
+
+        // assert_eq!(file, deserialized);
     }
 }

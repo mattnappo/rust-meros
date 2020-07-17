@@ -1,14 +1,16 @@
+use crate::{
+    primitives::{file::File, shard::Shard},
+    CanSerialize,
+};
 use ecies_ed25519::{
     decrypt, encrypt, generate_keypair, PublicKey, SecretKey,
 };
 use rand;
 use std::{
-    fs::{create_dir_all, File},
+    fs::{create_dir_all, File as StdFile},
     io::Write,
     path::Path,
 };
-
-use crate::CanSerialize;
 
 trait IsKey {}
 impl IsKey for PublicKey {}
@@ -22,7 +24,6 @@ pub enum CryptoError {
     SerializationError(bincode::Error),
     EncryptionError(ecies_ed25519::Error),
     IOError(std::io::Error),
-    NullKey(crate::GeneralError),
 }
 
 /// Specify the type of key and the name of the key.
@@ -33,29 +34,6 @@ enum KeyType {
 
 /// A handy shorthand type representing a keypair.
 type Keypair = (SecretKey, PublicKey);
-
-/// Differnet ways to encrypt and decrypt data. This struct enables quick keypair
-/// generation, and encryption and with a public key, private key, or both.
-pub struct EncryptionOptions {
-    pub_key: Option<PublicKey>, // Encrypt bytes with a public key
-    priv_key: Option<SecretKey>, // Encrypt bytes with priv_key, then pub_key
-}
-
-impl EncryptionOptions {
-    fn default_encrypt(key: PublicKey) -> EncryptionOptions {
-        EncryptionOptions {
-            pub_key: Some(key),
-            priv_key: None,
-        }
-    }
-
-    fn default_decrypt(key: SecretKey) -> EncryptionOptions {
-        EncryptionOptions {
-            pub_key: None,
-            priv_key: Some(key),
-        }
-    }
-}
 
 /// Write a single key to the disk.
 fn write_key<K>(key: &K, key_type: KeyType) -> Result<(), CryptoError>
@@ -70,7 +48,7 @@ where
         KeyType::Public(name) => (name, "pub"),
     };
 
-    let mut file = File::create(
+    let mut file = StdFile::create(
         format!("{}{}.{}", KEY_LOCATION, name, extension,).as_str(),
     )
     .map_err(|e| CryptoError::IOError(e))?;
@@ -94,10 +72,15 @@ fn write_keypair(
 }
 
 /// Generate a public-private keypair and write to disk with the given name.
-fn gen_keypair(name: &str) -> Result<Keypair, CryptoError> {
+pub fn gen_keypair(
+    name: &str,
+    write: bool,
+) -> Result<Keypair, CryptoError> {
     let mut csprng = rand::thread_rng();
     let (priv_key, pub_key) = generate_keypair(&mut csprng);
-    write_keypair((&priv_key, &pub_key), name)?;
+    if write {
+        write_keypair((&priv_key, &pub_key), name)?;
+    }
     Ok((priv_key, pub_key))
 }
 
@@ -114,42 +97,75 @@ fn load_keypair(name: &str) -> Result<Keypair, CryptoError> {
 }
 */
 
-/*
 pub trait CanEncrypt: CanSerialize {
-    type D;
+    type D: CanEncrypt;
 
-    fn encrypt(
-        &self,
-        options: EncryptionOptions,
-    ) -> Result<Vec<u8>, CryptoError>;
+    fn encrypt(&self, key: PublicKey) -> Result<Vec<u8>, CryptoError>;
 
     fn decrypt(
         bytes: Vec<u8>,
-        options: EncryptionOptions,
+        key: SecretKey,
     ) -> Result<Self::D, CryptoError>;
+}
+
+impl CanEncrypt for File {
+    type D = Self;
+
+    fn encrypt(&self, key: PublicKey) -> Result<Vec<u8>, CryptoError> {
+        let mut csprng = rand::thread_rng();
+        let bytes = self
+            .to_bytes()
+            .map_err(|e| CryptoError::SerializationError(e))?;
+
+        encrypt(&key, &bytes, &mut csprng)
+            .map_err(|e| CryptoError::EncryptionError(e))
+    }
+
+    fn decrypt(
+        bytes: Vec<u8>,
+        key: SecretKey,
+    ) -> Result<Self::D, CryptoError> {
+        let decrypted = decrypt(&key, &bytes)
+            .map_err(|e| CryptoError::EncryptionError(e))?;
+
+        <Self::D as CanSerialize>::from_bytes(decrypted)
+            .map_err(|e| CryptoError::SerializationError(e))
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::primitives::file::File;
+    use super::*;
+    use crate::primitives::{file::File, shard::Shard};
+    use crate::CanSerialize;
     use std::path::Path;
 
     #[test]
-    fn test_encrypt() {
-        let bytes =
-            File::new(Path::new("testfile.txt")).unwrap().to_bytes();
-        // encrypt it
-        // test it
+    fn test_encrypt_file() {
+        let file = File::new(Path::new("testfile.txt")).unwrap();
+        let keypair = gen_keypair("testkey", false).unwrap();
+        file.encrypt(keypair.1).unwrap();
     }
 
     #[test]
-    fn test_decrypt() {}
+    fn test_decrypt_file() {
+        let file = File::new(Path::new("testfile.txt")).unwrap();
+        let keypair = gen_keypair("testkey", false).unwrap();
+        let encrypted = file.encrypt(keypair.1).unwrap();
+        File::decrypt(encrypted, keypair.0).unwrap();
+    }
 
     #[test]
-    fn test_gen_keypair() {}
+    fn test_encrypt_shard() {}
+
+    #[test]
+    fn test_decrypt_shard() {}
+
+    #[test]
+    fn test_gen_keypair() {
+        gen_keypair("testkey", true).unwrap();
+    }
 
     #[test]
     fn test_load_keypair() {}
 }
-
-*/
