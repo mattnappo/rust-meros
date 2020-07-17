@@ -100,7 +100,12 @@ fn load_keypair(name: &str) -> Result<Keypair, CryptoError> {
 pub trait CanEncrypt: CanSerialize {
     type D: CanEncrypt;
 
-    fn encrypt(&self, key: PublicKey) -> Result<Vec<u8>, CryptoError>;
+    // fn encrypt(&self, key: PublicKey) -> Result<Vec<u8>, CryptoError>;
+    fn encrypt(
+        &self,
+        key: PublicKey,
+        secret: SecretKey,
+    ) -> Result<Vec<u8>, CryptoError>;
 
     fn decrypt(
         bytes: Vec<u8>,
@@ -111,26 +116,35 @@ pub trait CanEncrypt: CanSerialize {
 impl CanEncrypt for File {
     type D = Self;
 
-    fn encrypt(&self, key: PublicKey) -> Result<Vec<u8>, CryptoError> {
+    fn encrypt(
+        &self,
+        key: PublicKey,
+        secret: SecretKey,
+    ) -> Result<Vec<u8>, CryptoError> {
         let mut csprng = rand::thread_rng();
         let bytes = self
             .to_bytes()
             .map_err(|e| CryptoError::SerializationError(e))?;
-        let bytes = &bytes[..];
 
-        encrypt(&key, bytes, &mut csprng)
-            .map_err(|e| CryptoError::EncryptionError(e))
+        let encrypted = encrypt(&key, &bytes, &mut csprng)
+            .map_err(|e| CryptoError::EncryptionError(e))?; // return this
+        let decrypted = decrypt(&secret, &encrypted).unwrap();
+        println!(
+            "decrypted it inside the encrypt() method: {:?}",
+            File::from_bytes(decrypted).unwrap()
+        );
+        Ok(Vec::new())
     }
 
     fn decrypt(
         bytes: Vec<u8>,
         key: SecretKey,
     ) -> Result<Self::D, CryptoError> {
-        let decrypted = decrypt(&key, &bytes[..])
+        let decrypted = decrypt(&key, &bytes)
             .map_err(|e| CryptoError::EncryptionError(e))?;
 
         println!("THIS IS WHERE THE PROBLEM IS HAPPENING");
-        <Self::D as CanSerialize>::from_bytes(bytes)
+        <Self::D as CanSerialize>::from_bytes(decrypted)
             .map_err(|e| CryptoError::SerializationError(e))
     }
 }
@@ -147,7 +161,7 @@ mod tests {
         let file = File::new(Path::new("testfile.txt")).unwrap();
         let keypair = gen_keypair("testkey", false).unwrap();
 
-        let encrypted = file.encrypt(keypair.1).unwrap();
+        let encrypted = file.encrypt(keypair.1, keypair.0).unwrap();
         println!("encrypted: {:?}", encrypted);
     }
 
@@ -155,7 +169,7 @@ mod tests {
     fn test_decrypt_file() {
         let file = File::new(Path::new("testfile.txt")).unwrap();
         let keypair = gen_keypair("testkey", false).unwrap();
-        let encrypted = file.encrypt(keypair.1).unwrap();
+        let encrypted = file.encrypt(keypair.1, keypair.0).unwrap();
 
         let decrypted = File::decrypt(encrypted, keypair.0).unwrap();
     }
