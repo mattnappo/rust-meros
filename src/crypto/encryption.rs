@@ -129,6 +129,7 @@ impl CanEncrypt for File {
         let decrypted = decrypt(&key, &bytes[..])
             .map_err(|e| CryptoError::EncryptionError(e))?;
 
+        println!("THIS IS WHERE THE PROBLEM IS HAPPENING");
         <Self::D as CanSerialize>::from_bytes(bytes)
             .map_err(|e| CryptoError::SerializationError(e))
     }
@@ -138,6 +139,7 @@ impl CanEncrypt for File {
 mod tests {
     use super::*;
     use crate::primitives::{file::File, shard::Shard};
+    use crate::CanSerialize;
     use std::path::Path;
 
     #[test]
@@ -171,4 +173,58 @@ mod tests {
 
     #[test]
     fn test_load_keypair() {}
+
+    #[test]
+    fn test_basics() {
+        use super::super::hash::*;
+        use ecies_ed25519::{
+            decrypt, encrypt, generate_keypair, PublicKey, SecretKey,
+        };
+        use serde::{Deserialize, Serialize};
+
+        #[derive(Serialize, Deserialize, Debug)]
+        struct B {
+            r1: u128,
+            r2: String,
+            r3: Hash,
+        }
+
+        impl CanSerialize for B {
+            type S = Self;
+            fn to_bytes(&self) -> bincode::Result<Vec<u8>> {
+                bincode::serialize(self)
+            }
+            fn from_bytes(bytes: Vec<u8>) -> bincode::Result<Self::S> {
+                bincode::deserialize(&bytes[..])
+            }
+        }
+
+        let b = B {
+            r1: 123087,
+            r2: std::string::String::from("random str"),
+            r3: hash_bytes(vec![1, 2, 3, 4, 5]),
+        };
+        println!("B: {:?}", b);
+        let serialized = b.to_bytes().unwrap();
+
+        // Encryption time
+
+        let mut csprng = rand::thread_rng();
+        let (secret, public) =
+            ecies_ed25519::generate_keypair(&mut csprng);
+
+        // Encrypt the message with the public key such that only
+        // the holder of the secret key can decrypt.
+        let encrypted =
+            ecies_ed25519::encrypt(&public, &serialized, &mut csprng)
+                .unwrap();
+
+        // Decrypt the message with the secret key
+        let decrypted =
+            ecies_ed25519::decrypt(&secret, &encrypted).unwrap();
+        println!("\n\nDECRYPTED: {:?}\n\n", decrypted);
+
+        let reconstructed = B::from_bytes(decrypted).unwrap();
+        println!("RECONSTRUCTED: {:?}", reconstructed);
+    }
 }

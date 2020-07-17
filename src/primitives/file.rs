@@ -124,12 +124,12 @@ mod tests {
 
     #[test]
     fn test_from_bytes() {
-        let serialized = File::new(Path::new("testfile.txt"))
-            .unwrap()
-            .to_bytes()
-            .unwrap();
+        let file = File::new(Path::new("testfile.txt")).unwrap();
+        let serialized = file.to_bytes().unwrap();
 
         let deserialized = File::from_bytes(serialized).unwrap();
         println!("deserialized file: {:?}", deserialized);
+
+        // assert_eq!(file, deserialized);
     }
 }
