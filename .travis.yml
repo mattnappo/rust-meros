@@ -15,3 +15,5 @@ jobs:
 script:
   - cargo build --verbose --all --release
   - cargo test --verbose --all
+notification:
+  - email: false

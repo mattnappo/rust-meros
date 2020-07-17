@@ -8,7 +8,7 @@ use ecies_ed25519::{
 use rand;
 use std::{
     fs::{create_dir_all, File as StdFile},
-    io::Write,
+    io::{Read, Write},
     path::Path,
 };
 
@@ -84,16 +84,34 @@ pub fn gen_keypair(
     Ok((priv_key, pub_key))
 }
 
-/*
-fn load_key<K>(name: &str) -> Result<K, CryptoError>
+fn load_key<K>(key_type: &KeyType) -> Result<K, CryptoError>
 where
     K: IsKey + serde::Serialize,
 {
+    // Get key path
+    let mut loc = "";
+    match key_type {
+        KeyType::Public(name) => {
+            loc = format!("{}{}.pub", KEY_LOCATION, name).as_str()
+        }
+        KeyType::Private(name) => {
+            loc = format!("{}{}.priv", KEY_LOCATION, name).as_str()
+        }
+    }
 
+    // Read the key as bytes
+    let file = StdFile::open(loc).map_err(|e| CryptoError::IOError(e))?;
+    let mut key_buf = Vec::new();
+    file.read_to_end(&mut key_buf)
+        .map_err(|e| CryptoError::IOError(e))?;
+
+    // Deserialize the key
+    K::from_bytes(key_buf).map_err(|e| CryptoError::EncryptionError(e))
 }
 
+/*
 fn load_keypair(name: &str) -> Result<Keypair, CryptoError> {
-
+    Ok()
 }
 */
 
