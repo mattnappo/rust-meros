@@ -3,9 +3,11 @@ use crate::{
     crypto::hash,
     db::{IsKey, IsValue},
 };
-
 use serde::{Deserialize, Serialize};
-use std::time::{SystemTime, SystemTimeError, UNIX_EPOCH};
+use std::{
+    cmp::PartialEq,
+    time::{SystemTime, SystemTimeError, UNIX_EPOCH},
+};
 
 /// All of the errors that a `Shard` method could throw.
 #[derive(Debug)]
@@ -17,7 +19,9 @@ pub enum ShardError {
 /// The structure used for the identification of a shard on the meros
 /// network.
 #[derive(Serialize, Deserialize, Debug)]
-pub struct ShardID(hash::Hash);
+pub struct ShardID {
+    id: hash::Hash,
+}
 
 impl ShardID {
     pub fn new(data: &Vec<u8>) -> Result<(Self, u128), SystemTimeError> {
@@ -26,7 +30,18 @@ impl ShardID {
 
         let data =
             [&data[..], time.to_string().as_bytes()].concat().to_vec();
-        Ok((Self(hash::hash_bytes(data)), time))
+        Ok((
+            Self {
+                id: hash::hash_bytes(data),
+            },
+            time,
+        ))
+    }
+}
+
+impl PartialEq for ShardID {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
     }
 }
 
@@ -57,6 +72,14 @@ impl Shard {
     }
 }
 
+impl PartialEq for Shard {
+    fn eq(&self, other: &Self) -> bool {
+        self.data == other.data
+            && self.size == other.size
+            && self.timestamp == other.timestamp
+            && self.id == other.id
+    }
+}
 /*
 impl Compressable for Shard {
     fn compress(&self) -> Vec<u8> {}

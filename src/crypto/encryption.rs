@@ -178,6 +178,7 @@ mod tests {
         let keypair = gen_keypair("testkey", false).unwrap();
         let encrypted = file.encrypt(keypair.1).unwrap();
         let decrypted = File::decrypt(encrypted, keypair.0).unwrap();
+        assert_eq!(file, decrypted);
     }
 
     #[test]
