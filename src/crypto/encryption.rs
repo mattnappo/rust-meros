@@ -24,7 +24,6 @@ pub enum CryptoError {
     SerializationError(bincode::Error),
     EncryptionError(ecies_ed25519::Error),
     IOError(std::io::Error),
-    NullKey(crate::GeneralError),
 }
 
 /// Specify the type of key and the name of the key.
@@ -35,29 +34,6 @@ enum KeyType {
 
 /// A handy shorthand type representing a keypair.
 type Keypair = (SecretKey, PublicKey);
-
-/// Differnet ways to encrypt and decrypt data. This struct enables quick keypair
-/// generation, and encryption and with a public key, private key, or both.
-pub struct EncryptionOptions {
-    pub_key: Option<PublicKey>, // Encrypt bytes with a public key
-    priv_key: Option<SecretKey>, // Encrypt bytes with priv_key, then pub_key
-}
-
-impl EncryptionOptions {
-    fn default_encrypt(key: PublicKey) -> EncryptionOptions {
-        EncryptionOptions {
-            pub_key: Some(key),
-            priv_key: None,
-        }
-    }
-
-    fn default_decrypt(key: SecretKey) -> EncryptionOptions {
-        EncryptionOptions {
-            pub_key: None,
-            priv_key: Some(key),
-        }
-    }
-}
 
 /// Write a single key to the disk.
 fn write_key<K>(key: &K, key_type: KeyType) -> Result<(), CryptoError>
@@ -124,100 +100,37 @@ fn load_keypair(name: &str) -> Result<Keypair, CryptoError> {
 pub trait CanEncrypt: CanSerialize {
     type D: CanEncrypt;
 
-    fn encrypt(
-        &self,
-        options: EncryptionOptions,
-    ) -> Result<Vec<u8>, CryptoError>;
+    fn encrypt(&self, key: PublicKey) -> Result<Vec<u8>, CryptoError>;
 
     fn decrypt(
         bytes: Vec<u8>,
-        options: EncryptionOptions,
+        key: SecretKey,
     ) -> Result<Self::D, CryptoError>;
 }
 
 impl CanEncrypt for File {
     type D = Self;
 
-    fn encrypt(
-        &self,
-        options: EncryptionOptions,
-    ) -> Result<Vec<u8>, CryptoError> {
+    fn encrypt(&self, key: PublicKey) -> Result<Vec<u8>, CryptoError> {
         let mut csprng = rand::thread_rng();
         let bytes = self
             .to_bytes()
             .map_err(|e| CryptoError::SerializationError(e))?;
         let bytes = &bytes[..];
 
-        return match options.pub_key {
-            Some(key) => encrypt(&key, bytes, &mut csprng)
-                .map_err(|e| CryptoError::EncryptionError(e)),
-            None => Err(CryptoError::NullKey(crate::GeneralError::new(
-                "cannot encrypt with a null public key",
-            ))),
-        };
+        encrypt(&key, bytes, &mut csprng)
+            .map_err(|e| CryptoError::EncryptionError(e))
     }
 
     fn decrypt(
         bytes: Vec<u8>,
-        options: EncryptionOptions,
+        key: SecretKey,
     ) -> Result<Self::D, CryptoError> {
-        if let Some(key) = options.priv_key {
-            let decrypted = decrypt(&key, &bytes[..])
-                .map_err(|e| CryptoError::EncryptionError(e))?;
+        let decrypted = decrypt(&key, &bytes[..])
+            .map_err(|e| CryptoError::EncryptionError(e))?;
 
-            return match <Self::D as CanSerialize>::from_bytes(bytes) {
-                Ok(reconstructed) => Ok(reconstructed),
-                Err(e) => Err(CryptoError::SerializationError(e)),
-            };
-            //.map_err(|e| CryptoError::SerializationError(e))?;
-        }
-
-        Err(CryptoError::NullKey(crate::GeneralError::new(
-            "cannot decrypt with a null private key",
-        )))
-    }
-}
-
-impl CanEncrypt for Shard {
-    type D = Self;
-
-    fn encrypt(
-        &self,
-        options: EncryptionOptions,
-    ) -> Result<Vec<u8>, CryptoError> {
-        let mut csprng = rand::thread_rng();
-        let bytes = self
-            .to_bytes()
-            .map_err(|e| CryptoError::SerializationError(e))?;
-        let bytes = &bytes[..];
-
-        return match options.pub_key {
-            Some(key) => encrypt(&key, bytes, &mut csprng)
-                .map_err(|e| CryptoError::EncryptionError(e)),
-            None => Err(CryptoError::NullKey(crate::GeneralError::new(
-                "cannot encrypt with a null public key",
-            ))),
-        };
-    }
-
-    fn decrypt(
-        bytes: Vec<u8>,
-        options: EncryptionOptions,
-    ) -> Result<Self::D, CryptoError> {
-        if let Some(key) = options.priv_key {
-            let decrypted = decrypt(&key, &bytes[..])
-                .map_err(|e| CryptoError::EncryptionError(e))?;
-
-            return match <Self::D as CanSerialize>::from_bytes(bytes) {
-                Ok(reconstructed) => Ok(reconstructed),
-                Err(e) => Err(CryptoError::SerializationError(e)),
-            };
-            //.map_err(|e| CryptoError::SerializationError(e))?;
-        }
-
-        Err(CryptoError::NullKey(crate::GeneralError::new(
-            "cannot decrypt with a null private key",
-        )))
+        <Self::D as CanSerialize>::from_bytes(bytes)
+            .map_err(|e| CryptoError::SerializationError(e))
     }
 }
 
@@ -231,10 +144,8 @@ mod tests {
     fn test_encrypt_file() {
         let file = File::new(Path::new("testfile.txt")).unwrap();
         let keypair = gen_keypair("testkey", false).unwrap();
-        let options = EncryptionOptions::default_encrypt(keypair.1);
 
-        let encrypted = file.encrypt(options).unwrap();
-
+        let encrypted = file.encrypt(keypair.1).unwrap();
         println!("encrypted: {:?}", encrypted);
     }
 
@@ -242,14 +153,9 @@ mod tests {
     fn test_decrypt_file() {
         let file = File::new(Path::new("testfile.txt")).unwrap();
         let keypair = gen_keypair("testkey", false).unwrap();
-        let options = EncryptionOptions::default_encrypt(keypair.1);
-        let encrypted = file.encrypt(options).unwrap();
+        let encrypted = file.encrypt(keypair.1).unwrap();
 
-        let decrypted = File::decrypt(
-            encrypted,
-            EncryptionOptions::default_decrypt(keypair.0),
-        )
-        .unwrap();
+        let decrypted = File::decrypt(encrypted, keypair.0).unwrap();
     }
 
     #[test]
