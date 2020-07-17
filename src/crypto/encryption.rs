@@ -1,14 +1,16 @@
+use crate::{
+    primitives::{file::File, shard::Shard},
+    CanSerialize,
+};
 use ecies_ed25519::{
     decrypt, encrypt, generate_keypair, PublicKey, SecretKey,
 };
 use rand;
 use std::{
-    fs::{create_dir_all, File},
+    fs::{create_dir_all, File as StdFile},
     io::Write,
     path::Path,
 };
-
-use crate::CanSerialize;
 
 trait IsKey {}
 impl IsKey for PublicKey {}
@@ -70,7 +72,7 @@ where
         KeyType::Public(name) => (name, "pub"),
     };
 
-    let mut file = File::create(
+    let mut file = StdFile::create(
         format!("{}{}.{}", KEY_LOCATION, name, extension,).as_str(),
     )
     .map_err(|e| CryptoError::IOError(e))?;
@@ -128,22 +130,28 @@ pub trait CanEncrypt: CanSerialize {
     ) -> Result<Self::D, CryptoError>;
 }
 
-/*
 #[cfg(test)]
 mod tests {
-    use crate::primitives::file::File;
+    use crate::primitives::{file::File, shard::Shard};
     use std::path::Path;
 
     #[test]
-    fn test_encrypt() {
-        let bytes =
-            File::new(Path::new("testfile.txt")).unwrap().to_bytes();
-        // encrypt it
-        // test it
+    fn test_encrypt_file() {
+        let file = File::new(Path::new("testfile.txt")).unwrap();
+        file.encrypt();
     }
 
     #[test]
-    fn test_decrypt() {}
+    fn test_decrypt_file() {}
+
+    #[test]
+    fn test_encrypt_shard() {
+        let file = File::new(Path::new("testfile.txt")).unwrap();
+        file.encrypt();
+    }
+
+    #[test]
+    fn test_decrypt_shard() {}
 
     #[test]
     fn test_gen_keypair() {}
@@ -151,15 +159,6 @@ mod tests {
     #[test]
     fn test_load_keypair() {}
 }
-
-*/
-
-// NEW
-//
-
-/*
- *
-
 
 impl CanEncrypt for Shard {
     type D = Self;
@@ -206,5 +205,3 @@ impl CanEncrypt for Shard {
         )))
     }
 }
-
-*/

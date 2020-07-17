@@ -84,6 +84,8 @@ mod tests {
     #[test]
     fn test_to_bytes() {
         let shard = Shard::new(vec![1u8, 10u8]).unwrap();
+        assert_eq!(shard.size, 2);
+
         println!("shard: {:?}", shard);
         shard.to_bytes().unwrap();
     }
@@ -92,7 +94,6 @@ mod tests {
     fn test_from_bytes() {
         let serialized =
             Shard::new(vec![1u8, 10u8]).unwrap().to_bytes().unwrap();
-
         /*
                 let extra_bytes: &[u8] = &[
                     2u8, 5u8, 2u8, 5u8, 2u8, 5u8, 2u8, 5u8, 2u8, 5u8, 2u8, 5u8,
