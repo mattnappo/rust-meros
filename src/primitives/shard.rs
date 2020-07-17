@@ -9,7 +9,7 @@ use std::time::{SystemTime, SystemTimeError, UNIX_EPOCH};
 
 /// All of the errors that a `Shard` method could throw.
 #[derive(Debug)]
-enum ShardError {
+pub enum ShardError {
     SerializeError(bincode::Error),
     ShardIDError(SystemTimeError),
 }
@@ -36,7 +36,7 @@ impl IsKey for ShardID {}
 /// local shard database.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Shard {
-    data: Vec<u8>,
+    pub data: Vec<u8>,
     size: usize,
     timestamp: u128,
 
@@ -44,7 +44,7 @@ pub struct Shard {
 }
 
 impl Shard {
-    fn new(data: Vec<u8>) -> Result<Shard, ShardError> {
+    pub fn new(data: Vec<u8>) -> Result<Shard, ShardError> {
         let (id, timestamp) = ShardID::new(&data)
             .map_err(|e| ShardError::ShardIDError(e))?;
 

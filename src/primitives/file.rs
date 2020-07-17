@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
-use std::io::prelude::*;
-use std::time::{SystemTime, SystemTimeError, UNIX_EPOCH};
+use std::{
+    cmp::PartialEq,
+    io::prelude::*,
+    time::{SystemTime, SystemTimeError, UNIX_EPOCH},
+};
 
 use crate::{
     crypto::{encryption::CanEncrypt, hash},
@@ -10,7 +13,9 @@ use crate::{
 /// The structure used for the identification of a file on the meros
 /// network.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct FileID(hash::Hash);
+pub struct FileID {
+    id: hash::Hash,
+}
 
 impl FileID {
     pub fn new(
@@ -24,7 +29,15 @@ impl FileID {
             [filename.as_bytes(), &bytes[..], time.to_string().as_bytes()]
                 .concat()
                 .to_vec();
-        Ok(Self(hash::hash_bytes(data)))
+        Ok(Self {
+            id: hash::hash_bytes(data),
+        })
+    }
+}
+
+impl PartialEq for FileID {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
     }
 }
 
@@ -86,6 +99,11 @@ impl File {
     }
 }
 
+impl PartialEq for File {
+    fn eq(&self, other: &Self) -> bool {
+        self.filename == other.filename && self.id == other.id
+    }
+}
 impl super::Hashable for File {
     fn hash(&self) -> hash::Hash {
         [0 as u8; 32] // temp

@@ -133,6 +133,31 @@ impl CanEncrypt for File {
     }
 }
 
+impl CanEncrypt for Shard {
+    type D = Self;
+
+    fn encrypt(&self, key: PublicKey) -> Result<Vec<u8>, CryptoError> {
+        let mut csprng = rand::thread_rng();
+        let bytes = self
+            .to_bytes()
+            .map_err(|e| CryptoError::SerializationError(e))?;
+
+        encrypt(&key, &bytes, &mut csprng)
+            .map_err(|e| CryptoError::EncryptionError(e))
+    }
+
+    fn decrypt(
+        bytes: Vec<u8>,
+        key: SecretKey,
+    ) -> Result<Self::D, CryptoError> {
+        let decrypted = decrypt(&key, &bytes)
+            .map_err(|e| CryptoError::EncryptionError(e))?;
+
+        <Self::D as CanSerialize>::from_bytes(decrypted)
+            .map_err(|e| CryptoError::SerializationError(e))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -152,14 +177,24 @@ mod tests {
         let file = File::new(Path::new("testfile.txt")).unwrap();
         let keypair = gen_keypair("testkey", false).unwrap();
         let encrypted = file.encrypt(keypair.1).unwrap();
-        File::decrypt(encrypted, keypair.0).unwrap();
+        let decrypted = File::decrypt(encrypted, keypair.0).unwrap();
     }
 
     #[test]
-    fn test_encrypt_shard() {}
+    fn test_encrypt_shard() {
+        let keypair = gen_keypair("testkey", false).unwrap();
+        let shard = Shard::new(vec![1, 2, 3, 4]).unwrap();
+        shard.encrypt(keypair.1).unwrap();
+    }
 
     #[test]
-    fn test_decrypt_shard() {}
+    fn test_decrypt_shard() {
+        let shard = Shard::new(vec![1, 2, 3, 4, 5]).unwrap();
+        let keypair = gen_keypair("testkey", false).unwrap();
+        let encrypted = shard.encrypt(keypair.1).unwrap();
+        let decrypted = Shard::decrypt(encrypted, keypair.0).unwrap();
+        assert_eq!(shard, decrypted);
+    }
 
     #[test]
     fn test_gen_keypair() {

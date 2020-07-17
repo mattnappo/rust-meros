@@ -1,17 +1,17 @@
 language: rust
-
+os:
+  - linux
+  - osx
+  - windows
 rust:
-    - stable
-    - beta
-    - nightly
-
+  - stable
+  - beta
+  - nightly
 cache: cargo
-
 jobs:
-    allow_failures:
-        - rust: nightly
-    fast_finish: true
-
+  allow_failures:
+    - rust: nightly
+  fast_finish: true
 script:
-    - cargo build --verbose --all --release
-    - cargo test --verbose --all
+  - cargo build --verbose --all --release
+  - cargo test --verbose --all
