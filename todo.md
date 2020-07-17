@@ -15,6 +15,10 @@
  - crypto load key
  - crypto decrypt
 
+*Other*
+ - Make those encryption methods a macro plz
+ - Remove the stupid encryption options type (just overengineering)
+
 *Security*
  - Shard digital signatures
  - Checksums on `Shard`s and `File`s

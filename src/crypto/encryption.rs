@@ -96,10 +96,15 @@ fn write_keypair(
 }
 
 /// Generate a public-private keypair and write to disk with the given name.
-fn gen_keypair(name: &str) -> Result<Keypair, CryptoError> {
+pub fn gen_keypair(
+    name: &str,
+    write: bool,
+) -> Result<Keypair, CryptoError> {
     let mut csprng = rand::thread_rng();
     let (priv_key, pub_key) = generate_keypair(&mut csprng);
-    write_keypair((&priv_key, &pub_key), name)?;
+    if write {
+        write_keypair((&priv_key, &pub_key), name)?;
+    }
     Ok((priv_key, pub_key))
 }
 
@@ -117,7 +122,7 @@ fn load_keypair(name: &str) -> Result<Keypair, CryptoError> {
 */
 
 pub trait CanEncrypt: CanSerialize {
-    type D;
+    type D: CanEncrypt;
 
     fn encrypt(
         &self,
@@ -130,34 +135,47 @@ pub trait CanEncrypt: CanSerialize {
     ) -> Result<Self::D, CryptoError>;
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::primitives::{file::File, shard::Shard};
-    use std::path::Path;
+impl CanEncrypt for File {
+    type D = Self;
 
-    #[test]
-    fn test_encrypt_file() {
-        let file = File::new(Path::new("testfile.txt")).unwrap();
-        file.encrypt();
+    fn encrypt(
+        &self,
+        options: EncryptionOptions,
+    ) -> Result<Vec<u8>, CryptoError> {
+        let mut csprng = rand::thread_rng();
+        let bytes = self
+            .to_bytes()
+            .map_err(|e| CryptoError::SerializationError(e))?;
+        let bytes = &bytes[..];
+
+        return match options.pub_key {
+            Some(key) => encrypt(&key, bytes, &mut csprng)
+                .map_err(|e| CryptoError::EncryptionError(e)),
+            None => Err(CryptoError::NullKey(crate::GeneralError::new(
+                "cannot encrypt with a null public key",
+            ))),
+        };
     }
 
-    #[test]
-    fn test_decrypt_file() {}
+    fn decrypt(
+        bytes: Vec<u8>,
+        options: EncryptionOptions,
+    ) -> Result<Self::D, CryptoError> {
+        if let Some(key) = options.priv_key {
+            let decrypted = decrypt(&key, &bytes[..])
+                .map_err(|e| CryptoError::EncryptionError(e))?;
 
-    #[test]
-    fn test_encrypt_shard() {
-        let file = File::new(Path::new("testfile.txt")).unwrap();
-        file.encrypt();
+            return match <Self::D as CanSerialize>::from_bytes(bytes) {
+                Ok(reconstructed) => Ok(reconstructed),
+                Err(e) => Err(CryptoError::SerializationError(e)),
+            };
+            //.map_err(|e| CryptoError::SerializationError(e))?;
+        }
+
+        Err(CryptoError::NullKey(crate::GeneralError::new(
+            "cannot decrypt with a null private key",
+        )))
     }
-
-    #[test]
-    fn test_decrypt_shard() {}
-
-    #[test]
-    fn test_gen_keypair() {}
-
-    #[test]
-    fn test_load_keypair() {}
 }
 
 impl CanEncrypt for Shard {
@@ -185,10 +203,7 @@ impl CanEncrypt for Shard {
     fn decrypt(
         bytes: Vec<u8>,
         options: EncryptionOptions,
-    ) -> Result<Self::D, CryptoError>
-    where
-        Self::D: CanEncrypt,
-    {
+    ) -> Result<Self::D, CryptoError> {
         if let Some(key) = options.priv_key {
             let decrypted = decrypt(&key, &bytes[..])
                 .map_err(|e| CryptoError::EncryptionError(e))?;
@@ -204,4 +219,50 @@ impl CanEncrypt for Shard {
             "cannot decrypt with a null private key",
         )))
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::primitives::{file::File, shard::Shard};
+    use std::path::Path;
+
+    #[test]
+    fn test_encrypt_file() {
+        let file = File::new(Path::new("testfile.txt")).unwrap();
+        let keypair = gen_keypair("testkey", false).unwrap();
+        let options = EncryptionOptions::default_encrypt(keypair.1);
+
+        let encrypted = file.encrypt(options).unwrap();
+
+        println!("encrypted: {:?}", encrypted);
+    }
+
+    #[test]
+    fn test_decrypt_file() {
+        let file = File::new(Path::new("testfile.txt")).unwrap();
+        let keypair = gen_keypair("testkey", false).unwrap();
+        let options = EncryptionOptions::default_encrypt(keypair.1);
+        let encrypted = file.encrypt(options).unwrap();
+
+        let decrypted = File::decrypt(
+            encrypted,
+            EncryptionOptions::default_decrypt(keypair.0),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_encrypt_shard() {}
+
+    #[test]
+    fn test_decrypt_shard() {}
+
+    #[test]
+    fn test_gen_keypair() {
+        gen_keypair("testkey", true).unwrap();
+    }
+
+    #[test]
+    fn test_load_keypair() {}
 }
