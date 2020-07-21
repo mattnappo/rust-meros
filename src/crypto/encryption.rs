@@ -27,6 +27,7 @@ pub enum CryptoError {
     SerializationError(bincode::Error),
     EncryptionError(ecies_ed25519::Error),
     IOError(std::io::Error),
+    InvalidKey(crate::GeneralError),
 }
 
 /// Specify the type of key and the name of the key.
@@ -87,35 +88,68 @@ pub fn gen_keypair(
     Ok((priv_key, pub_key))
 }
 
-/// Load a key from the disk given the key name and type.
-fn load_key<'a, K>(key_type: &KeyType) -> Result<K, CryptoError>
-where
-    K: IsKey + serde::Deserialize<'a>,
-{
+/// Load a public key from the disk given the key name and type.
+fn load_pub_key(key_type: &KeyType) -> Result<PublicKey, CryptoError> {
     // Get key path
     let loc = match key_type {
         KeyType::Public(name) => format!("{}{}.pub", KEY_LOCATION, name),
-        KeyType::Private(name) => format!("{}{}.priv", KEY_LOCATION, name),
+        KeyType::Private(name) => {
+            return Err(CryptoError::InvalidKey(crate::GeneralError::new(
+                format!(
+                    "cannot load public key: {} is a private key",
+                    name,
+                )
+                .as_str(),
+            )))
+        }
     };
 
     // Read the key as bytes
     let mut file = StdFile::open(loc.as_str())
         .map_err(|e| CryptoError::IOError(e))?;
     let mut key_buf = Vec::new();
-    let key_buf_copy = key_buf.clone();
     file.read_to_end(&mut key_buf)
         .map_err(|e| CryptoError::IOError(e))?;
 
-    // Deserialize the key
-    bincode::deserialize(&key_buf_copy[..])
+    // Deserialize the key (todo: use a trait here)
+    bincode::deserialize(&key_buf[..])
         .map_err(|e| CryptoError::SerializationError(e))
 }
 
-/*
-fn load_keypair(name: &str) -> Result<Keypair, CryptoError> {
-    Ok()
+/// Load a private key from the disk given the key name and type.
+fn load_priv_key(key_type: &KeyType) -> Result<SecretKey, CryptoError> {
+    // Get key path
+    let loc = match key_type {
+        KeyType::Private(name) => format!("{}{}.priv", KEY_LOCATION, name),
+        KeyType::Public(name) => {
+            return Err(CryptoError::InvalidKey(crate::GeneralError::new(
+                format!(
+                    "cannot load private key: {} is a public key",
+                    name,
+                )
+                .as_str(),
+            )))
+        }
+    };
+
+    // Read the key as bytes
+    let mut file = StdFile::open(loc.as_str())
+        .map_err(|e| CryptoError::IOError(e))?;
+    let mut key_buf = Vec::new();
+    file.read_to_end(&mut key_buf)
+        .map_err(|e| CryptoError::IOError(e))?;
+
+    // Deserialize the key (todo: use a trait here)
+    bincode::deserialize(&key_buf[..])
+        .map_err(|e| CryptoError::SerializationError(e))
 }
-*/
+
+fn load_keypair(name: &str) -> Result<Keypair, CryptoError> {
+    Ok((
+        load_priv_key(&KeyType::Private(name.to_string()))?,
+        load_pub_key(&KeyType::Public(name.to_string()))?,
+    ))
+}
 
 pub trait CanEncrypt: CanSerialize {
     type D: CanEncrypt;
