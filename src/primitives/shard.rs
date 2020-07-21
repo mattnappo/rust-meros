@@ -54,12 +54,13 @@ pub struct Shard {
     pub data: Vec<u8>,
     size: usize,
     timestamp: u128,
+    index: u32,
 
     id: ShardID,
 }
 
 impl Shard {
-    pub fn new(data: Vec<u8>) -> Result<Shard, ShardError> {
+    pub fn new(data: Vec<u8>, index: u32) -> Result<Shard, ShardError> {
         let (id, timestamp) = ShardID::new(&data)
             .map_err(|e| ShardError::ShardIDError(e))?;
 
@@ -67,8 +68,16 @@ impl Shard {
             size: data.len(),
             data,
             timestamp,
+            index,
             id,
         })
+    }
+}
+
+/// Split a vector of bytes as described by the `sizes` parameter.
+pub fn split_bytes(bytes: Vec<u8>, sizes: Vec<u8>) -> Vec<Shard> {
+    // this is a temporary implementation
+    for size in sizes.iter() { // Iterate through each size
     }
 }
 
