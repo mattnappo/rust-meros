@@ -2,6 +2,7 @@ use crate::{
     core::Compressable,
     crypto::hash,
     db::{IsKey, IsValue},
+    GeneralError,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -13,7 +14,8 @@ use std::{
 #[derive(Debug)]
 pub enum ShardError {
     SerializeError(bincode::Error),
-    ShardIDError(SystemTimeError),
+    TimestampError(SystemTimeError),
+    InvalidSplitSizes(GeneralError),
 }
 
 /// The structure used for the identification of a shard on the meros
@@ -24,9 +26,11 @@ pub struct ShardID {
 }
 
 impl ShardID {
-    pub fn new(data: &Vec<u8>) -> Result<(Self, u128), SystemTimeError> {
-        let time = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs()
-            as u128;
+    pub fn new(data: &Vec<u8>) -> Result<(Self, u128), ShardError> {
+        let time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| ShardError::TimestampError(e))?
+            .as_secs() as u128;
 
         let data =
             [&data[..], time.to_string().as_bytes()].concat().to_vec();
@@ -74,10 +78,35 @@ impl Shard {
     }
 }
 
-/// Split a vector of bytes as described by the `sizes` parameter.
-pub fn split_bytes(bytes: Vec<u8>, sizes: Vec<u8>) -> Vec<Shard> {
-    // this is a temporary implementation
-    for size in sizes.iter() { // Iterate through each size
+/// Split a vector of bytes as described by the `sizes` parameter and
+/// return properly distributed `Shard`s.
+pub fn split_bytes(
+    bytes: &Vec<u8>,
+    sizes: &Vec<usize>,
+) -> Result<Vec<Shard>, ShardError> {
+    // Validate the `sizes` vector
+    if sizes.iter().sum() != bytes.len() {
+        return Err(ShardError::InvalidSplitSizes(GeneralError::new(
+            format!(
+                "{:?} is not a valid vector of byte split sizes",
+                sizes,
+            )
+            .as_str(),
+        )));
+    }
+
+    let mut shards: Vec<Shard>;
+    let byte_pointer = 0usize;
+
+    // Iterate through each size and create a shard with that data
+    for size in sizes.iter() {
+        let mut temp_bytes: Vec<u8> = Vec::new();
+
+        for i in 0..size {
+            temp_bytes.push(bytes[byte_pointer]);
+            byte_pointer++;
+        }
+        shards.push(Shard::new(temp_bytes)?);
     }
 }
 
@@ -90,8 +119,7 @@ impl PartialEq for Shard {
     }
 }
 /*
-impl Compressable for Shard {
-    fn compress(&self) -> Vec<u8> {}
+impl Compressable for Shard { fn compress(&self) -> Vec<u8> {}
     fn decompress(bytes: Vec<u8>) -> Self {}
 }
 */
