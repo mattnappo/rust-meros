@@ -65,8 +65,7 @@ pub struct Shard {
 
 impl Shard {
     pub fn new(data: Vec<u8>, index: u32) -> Result<Shard, ShardError> {
-        let (id, timestamp) = ShardID::new(&data)
-            .map_err(|e| ShardError::ShardIDError(e))?;
+        let (id, timestamp) = ShardID::new(&data)?;
 
         Ok(Shard {
             size: data.len(),
@@ -85,7 +84,7 @@ pub fn split_bytes(
     sizes: &Vec<usize>,
 ) -> Result<Vec<Shard>, ShardError> {
     // Validate the `sizes` vector
-    if sizes.iter().sum() != bytes.len() {
+    if sizes.iter().sum::<usize>() != bytes.len() {
         return Err(ShardError::InvalidSplitSizes(GeneralError::new(
             format!(
                 "{:?} is not a valid vector of byte split sizes",
@@ -95,19 +94,19 @@ pub fn split_bytes(
         )));
     }
 
-    let mut shards: Vec<Shard>;
-    let byte_pointer = 0usize;
+    let mut shards: Vec<Shard> = Vec::new();
+    let mut byte_pointer = 0usize;
 
     // Iterate through each size and create a shard with that data
-    for size in sizes.iter() {
-        let mut temp_bytes: Vec<u8> = Vec::new();
+    for i in 0..sizes.len() {
+        let size = sizes[i];
+        let mut sliced_bytes = &bytes[byte_pointer..size];
 
-        for i in 0..size {
-            temp_bytes.push(bytes[byte_pointer]);
-            byte_pointer++;
-        }
-        shards.push(Shard::new(temp_bytes)?);
+        shards.push(Shard::new(sliced_bytes.to_vec(), i as u32)?);
+        byte_pointer = byte_pointer + size;
     }
+
+    Ok(shards)
 }
 
 impl PartialEq for Shard {
