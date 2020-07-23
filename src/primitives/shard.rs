@@ -1,6 +1,6 @@
 use crate::{
     core::Compressable,
-    crypto::{encryption, hash},
+    crypto::{encryption, hash, CryptoError},
     db::{IsKey, IsValue},
     GeneralError,
 };
@@ -20,7 +20,7 @@ pub enum ShardError {
     TimestampError(SystemTimeError),
     InvalidSplitSizes(GeneralError),
     NullShardData(GeneralError),
-    CryptoError(encryption::CryptoError),
+    CryptoError(CryptoError),
 }
 
 /// The structure used for the identification of a shard on the meros
@@ -60,8 +60,9 @@ impl IsKey for ShardID {}
 /// to be sharded.
 pub struct ShardingOptions {
     shard_count: usize, // The amount of shards (data partitions)
-    public_key: Option<PublicKey>,
-    // compress: bool,
+    public_key: Option<PublicKey>, // The encryption key (for sharding)
+    private_key: Option<SecretKey>, // The decryption key (for reconstructing)
+                                    // compress: bool,
 }
 
 /// The structure representing a `Shard` to be stored in a node's
@@ -96,13 +97,33 @@ impl Shard {
     ) -> Result<Vec<Shard>, ShardError> {
         let mut b = bytes;
         if let Some(key) = options.public_key {
-            b = &encryption::encrypt_bytes(&key, &b)
+            let b = &encryption::encrypt_bytes(&key, &b)
                 .map_err(|e| ShardError::CryptoError(e))?;
         }
 
-        let sizes =
-            calculate_shard_sizes(bytes.len(), options.shard_count)?;
-        split_bytes(&bytes, &sizes)
+        let sizes = calculate_shard_sizes(b.len(), options.shard_count)?;
+        split_bytes(&b, &sizes)
+    }
+
+    /// The inverse operation of `shard`: return a byte vector given an array
+    /// of shards.
+    pub fn reconstruct(
+        shards: &Vec<Shard>,
+        options: ShardingOptions,
+    ) -> Result<Vec<u8>, CryptoError> {
+        // Reconstruct
+        let mut data: Vec<u8> = Vec::new();
+        for shard in shards.iter() {
+            for byte in shard.data.iter() {
+                data.push(*byte);
+            }
+        }
+
+        // Decrypt if a key is given
+        if let Some(key) = options.private_key {
+            return encryption::decrypt_bytes(&key, &data);
+        }
+        Ok(data)
     }
 }
 
@@ -129,7 +150,7 @@ fn split_bytes(
     // Iterate through each size and create a shard with that data
     for i in 0..sizes.len() {
         let size = sizes[i];
-        let mut sliced_bytes = &bytes[byte_pointer..size + byte_pointer];
+        let sliced_bytes = &bytes[byte_pointer..size + byte_pointer];
 
         shards.push(Shard::new(sliced_bytes.to_vec(), i as u32)?);
         byte_pointer += size;
@@ -266,6 +287,7 @@ mod tests {
             ShardingOptions {
                 shard_count: n_shards,
                 public_key: None,
+                private_key: None,
             },
         )
         .unwrap();

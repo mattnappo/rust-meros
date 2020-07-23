@@ -1,3 +1,4 @@
+use super::CryptoError;
 use crate::{
     primitives::{file::File, shard::Shard},
     CanSerialize,
@@ -20,15 +21,6 @@ impl IsKey for PublicKey {}
 impl IsKey for SecretKey {}
 
 const KEY_LOCATION: &str = "./data/keys/";
-
-/// All of the errors that can be thrown by the Crypto module.
-#[derive(Debug)]
-pub enum CryptoError {
-    SerializationError(bincode::Error),
-    EncryptionError(ecies_ed25519::Error),
-    IOError(std::io::Error),
-    InvalidKey(crate::GeneralError),
-}
 
 /// Specify the type of key and the name of the key.
 enum KeyType {
