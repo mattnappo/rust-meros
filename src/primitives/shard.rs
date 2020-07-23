@@ -77,11 +77,20 @@ impl Shard {
             id,
         })
     }
+
+    /// Given some bytes, split the bytes and return a vector of `Shard`s.
+    pub fn shard(
+        bytes: Vec<u8>,
+        shard_count: usize,
+    ) -> Result<Vec<Shard>, ShardError> {
+        let sizes = calculate_shard_sizes(bytes.len(), shard_count)?;
+        split_bytes(&bytes, &sizes)
+    }
 }
 
 /// Split a vector of bytes as described by the `sizes` parameter and
 /// return properly distributed `Shard`s.
-pub fn split_bytes(
+fn split_bytes(
     bytes: &Vec<u8>,
     sizes: &Vec<usize>,
 ) -> Result<Vec<Shard>, ShardError> {
@@ -228,7 +237,24 @@ mod tests {
     #[test]
     fn test_calc_shard_sizes() {
         let t1 = calculate_shard_sizes(10, 3).unwrap();
-        let t2 = calculate_shard_sizes(12312238, 19).unwrap();
+        let t2 = calculate_shard_sizes(12312238, 27).unwrap();
+        let t3 = calculate_shard_sizes(255 * 2, 19).unwrap();
         println!("t1: {:?}\nt2: {:?}", t1, t2);
+    }
+
+    #[test]
+    fn test_shard() {
+        // Generate some random data
+        let mut my_bytes: Vec<u8> = vec![];
+        for b in 0..255 {
+            my_bytes.push(b);
+            my_bytes.push(b);
+        }
+        println!("my_bytes: {:?}", my_bytes);
+
+        // Test sharding
+        let n_shards = 19;
+        let shards = Shard::shard(my_bytes, n_shards).unwrap();
+        println!("\n\nshards: {:?}\n\n", shards);
     }
 }
