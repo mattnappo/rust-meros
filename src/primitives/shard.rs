@@ -5,6 +5,7 @@ use crate::{
     GeneralError,
 };
 use math::round::floor;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::PartialEq,
@@ -80,10 +81,10 @@ impl Shard {
 
     /// Given some bytes, split the bytes and return a vector of `Shard`s.
     pub fn shard(
-        bytes: Vec<u8>,
-        shard_count: usize,
+        bytes: &Vec<u8>,
+        shard_count: &usize,
     ) -> Result<Vec<Shard>, ShardError> {
-        let sizes = calculate_shard_sizes(bytes.len(), shard_count)?;
+        let sizes = calculate_shard_sizes(bytes.len(), *shard_count)?;
         split_bytes(&bytes, &sizes)
     }
 }
@@ -242,19 +243,40 @@ mod tests {
         println!("t1: {:?}\nt2: {:?}", t1, t2);
     }
 
+    fn test_shard_case(my_bytes: Vec<u8>, n_shards: usize) {
+        let shards = Shard::shard(&my_bytes, &n_shards).unwrap();
+        println!("\n\nshards: {:?}\n\n", shards);
+
+        // Piece the data from the shards back together
+        let mut data: Vec<u8> = Vec::new();
+        for shard in shards.iter() {
+            for byte in shard.data.iter() {
+                data.push(*byte);
+            }
+        }
+        assert_eq!(my_bytes, data);
+    }
+
     #[test]
     fn test_shard() {
-        // Generate some random data
-        let mut my_bytes: Vec<u8> = vec![];
-        for b in 0..255 {
-            my_bytes.push(b);
-            my_bytes.push(b);
+        // Simple test case
+        let mut b: Vec<u8> = Vec::new();
+        for byte in 0..255 {
+            b.push(byte);
+            b.push(byte);
         }
-        println!("my_bytes: {:?}", my_bytes);
+        test_shard_case(b, 19usize);
 
-        // Test sharding
-        let n_shards = 19;
-        let shards = Shard::shard(my_bytes, n_shards).unwrap();
-        println!("\n\nshards: {:?}\n\n", shards);
+        // Do some more automated testing
+        let mut rng = rand::thread_rng();
+        for i in 0..50 {
+            // Generate a lot of bytes
+            let mut b: Vec<u8> = Vec::new();
+            for i in 0..rng.gen_range(1, 100_000) {
+                b.push(rng.gen_range(0, 0xFF) as u8);
+            }
+            let len = b.len();
+            test_shard_case(b, rng.gen_range(1, len));
+        }
     }
 }
