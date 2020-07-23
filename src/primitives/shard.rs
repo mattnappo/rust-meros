@@ -264,12 +264,12 @@ mod tests {
         let shards = Shard::shard(
             &my_bytes,
             ShardingOptions {
-                shard_count&: n_shards,
+                shard_count: n_shards,
                 public_key: None,
             },
         )
         .unwrap();
-        println!("\n\nshards: {:?}\n\n", shards);
+        // println!("\n\nshards: {:?}\n\n", shards);
 
         // Piece the data from the shards back together
         let mut data: Vec<u8> = Vec::new();
@@ -293,7 +293,7 @@ mod tests {
 
         // Do some more automated testing
         let mut rng = rand::thread_rng();
-        for i in 0..50 {
+        for i in 0..10 {
             // Generate a lot of bytes
             let mut b: Vec<u8> = Vec::new();
             for i in 0..rng.gen_range(1, 100_000) {
