@@ -4,6 +4,7 @@ use crate::{
     db::{IsKey, IsValue},
     GeneralError,
 };
+use math::round::floor;
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::PartialEq,
@@ -104,7 +105,7 @@ pub fn split_bytes(
         let mut sliced_bytes = &bytes[byte_pointer..size + byte_pointer];
 
         shards.push(Shard::new(sliced_bytes.to_vec(), i as u32)?);
-        byte_pointer = byte_pointer + size;
+        byte_pointer += size;
     }
 
     Ok(shards)
@@ -117,16 +118,30 @@ fn calculate_shard_sizes(
     n_bytes: usize,
     n_partitions: usize,
 ) -> Result<Vec<usize>, ShardError> {
-    if n_bytes == 0 || n_partitions == 0 {
-        return Err(
-            ShardError::NullShardData(
-                GeneralError::new(
-                    "cannot calculate shard sizes due to null number of partitions or bytes"
-                )
-            )
-        );
+    // Validate the inputs
+    if n_bytes == 0 || n_partitions == 0 || n_partitions > n_bytes {
+        return Err(ShardError::NullShardData(GeneralError::new(
+            "invalid parameters to calculate shard sizes",
+        )));
     }
-    Ok(vec![8usize])
+
+    // The average byte size of each partition
+    let avg = floor((n_bytes / n_partitions) as f64, 0) as usize;
+
+    // The amount of bytes left over
+    let extra = n_bytes % n_partitions;
+
+    let mut sizes: Vec<usize> = vec![avg; n_partitions];
+    let len = sizes.len();
+    sizes[len - 1] += extra;
+
+    // Before returning, just make sure that everything went well
+    if sizes.iter().sum::<usize>() != n_bytes {
+        return Err(ShardError::NullShardData(GeneralError::new(
+            "unable to calculate shard sizes",
+        )));
+    }
+    Ok(sizes)
 }
 
 impl PartialEq for Shard {
@@ -187,7 +202,7 @@ mod tests {
     #[test]
     fn test_split_bytes() {
         // Test 1
-        let bytes: Vec<u8> = vec![1, 2, 3, 0, 5, 6, 7];
+        let bytes: Vec<u8> = vec![1, 2, 3, 4, 5, 6, 7];
         let sizes: Vec<usize> = vec![1, 2, 1, 1, 2];
 
         let shards = split_bytes(&bytes, &sizes).unwrap();
@@ -208,5 +223,12 @@ mod tests {
         assert_eq!(shards[0].data, vec![1u8, 2, 3, 4, 5, 6, 7, 8, 12]);
         assert_eq!(shards[1].data, vec![9u8, 17, 15]);
         assert_eq!(shards[2].data, vec![7u8]);
+    }
+
+    #[test]
+    fn test_calc_shard_sizes() {
+        let t1 = calculate_shard_sizes(10, 3).unwrap();
+        let t2 = calculate_shard_sizes(12312238, 19).unwrap();
+        println!("t1: {:?}\nt2: {:?}", t1, t2);
     }
 }
