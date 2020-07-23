@@ -238,13 +238,13 @@ mod tests {
     #[test]
     fn test_encrypt_shard() {
         let keypair = gen_keypair("testkey", false).unwrap();
-        let shard = Shard::new(vec![1, 2, 3, 4]).unwrap();
+        let shard = Shard::new(vec![1, 2, 3, 4], 1).unwrap();
         shard.encrypt(keypair.1).unwrap();
     }
 
     #[test]
     fn test_decrypt_shard() {
-        let shard = Shard::new(vec![1, 2, 3, 4, 5]).unwrap();
+        let shard = Shard::new(vec![1, 2, 3, 4, 5], 1).unwrap();
         let keypair = gen_keypair("testkey", false).unwrap();
         let encrypted = shard.encrypt(keypair.1).unwrap();
         let decrypted = Shard::decrypt(encrypted, keypair.0).unwrap();

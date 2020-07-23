@@ -16,6 +16,7 @@ pub enum ShardError {
     SerializeError(bincode::Error),
     TimestampError(SystemTimeError),
     InvalidSplitSizes(GeneralError),
+    NullShardData(GeneralError),
 }
 
 /// The structure used for the identification of a shard on the meros
@@ -84,10 +85,10 @@ pub fn split_bytes(
     sizes: &Vec<usize>,
 ) -> Result<Vec<Shard>, ShardError> {
     // Validate the `sizes` vector
-    if sizes.iter().sum::<usize>() != bytes.len() {
+    if sizes.iter().sum::<usize>() != bytes.len() || sizes.contains(&0) {
         return Err(ShardError::InvalidSplitSizes(GeneralError::new(
             format!(
-                "{:?} is not a valid vector of byte split sizes",
+                "{:?} is not a valid vector of byte split sizes.",
                 sizes,
             )
             .as_str(),
@@ -100,7 +101,7 @@ pub fn split_bytes(
     // Iterate through each size and create a shard with that data
     for i in 0..sizes.len() {
         let size = sizes[i];
-        let mut sliced_bytes = &bytes[byte_pointer..size];
+        let mut sliced_bytes = &bytes[byte_pointer..size + byte_pointer];
 
         shards.push(Shard::new(sliced_bytes.to_vec(), i as u32)?);
         byte_pointer = byte_pointer + size;
@@ -142,7 +143,7 @@ mod tests {
 
     #[test]
     fn test_to_bytes() {
-        let shard = Shard::new(vec![1u8, 10u8]).unwrap();
+        let shard = Shard::new(vec![1u8, 10u8], 1).unwrap();
         assert_eq!(shard.size, 2);
 
         println!("shard: {:?}", shard);
@@ -152,7 +153,7 @@ mod tests {
     #[test]
     fn test_from_bytes() {
         let serialized =
-            Shard::new(vec![1u8, 10u8]).unwrap().to_bytes().unwrap();
+            Shard::new(vec![1u8, 10u8], 1).unwrap().to_bytes().unwrap();
         /*
                 let extra_bytes: &[u8] = &[
                     2u8, 5u8, 2u8, 5u8, 2u8, 5u8, 2u8, 5u8, 2u8, 5u8, 2u8, 5u8,
@@ -162,5 +163,31 @@ mod tests {
         */
         let deserialized = Shard::from_bytes(serialized).unwrap();
         println!("deserialized shard: {:?}", deserialized);
+    }
+
+    #[test]
+    fn test_split_bytes() {
+        // Test 1
+        let bytes: Vec<u8> = vec![1, 2, 3, 4, 5, 6, 7];
+        let sizes: Vec<usize> = vec![1, 2, 1, 1, 2];
+
+        let shards = split_bytes(&bytes, &sizes).unwrap();
+
+        assert_eq!(shards[0].data, vec![1u8]);
+        assert_eq!(shards[1].data, vec![2u8, 3u8]);
+        assert_eq!(shards[2].data, vec![4u8]);
+        assert_eq!(shards[3].data, vec![5u8]);
+        assert_eq!(shards[4].data, vec![6u8, 7u8]);
+
+        // Test 2
+        let bytes: Vec<u8> =
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 12, 9, 17, 15, 7];
+        let sizes: Vec<usize> = vec![9, 3, 1]; // 13 total
+
+        let shards = split_bytes(&bytes, &sizes).unwrap();
+
+        assert_eq!(shards[0].data, vec![1u8, 2, 3, 4, 5, 6, 7, 8, 12]);
+        assert_eq!(shards[1].data, vec![9u8, 17, 15]);
+        assert_eq!(shards[2].data, vec![7u8]);
     }
 }
