@@ -1,9 +1,10 @@
 use crate::{
     core::Compressable,
-    crypto::hash,
+    crypto::{encryption, hash},
     db::{IsKey, IsValue},
     GeneralError,
 };
+use ecies_ed25519::{PublicKey, SecretKey};
 use math::round::floor;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -19,6 +20,7 @@ pub enum ShardError {
     TimestampError(SystemTimeError),
     InvalidSplitSizes(GeneralError),
     NullShardData(GeneralError),
+    CryptoError(encryption::CryptoError),
 }
 
 /// The structure used for the identification of a shard on the meros
@@ -54,6 +56,14 @@ impl PartialEq for ShardID {
 
 impl IsKey for ShardID {}
 
+/// A structure used to configure how a vector of bytes is
+/// to be sharded.
+pub struct ShardingOptions {
+    shard_count: usize, // The amount of shards (data partitions)
+    public_key: Option<PublicKey>,
+    // compress: bool,
+}
+
 /// The structure representing a `Shard` to be stored in a node's
 /// local shard database.
 #[derive(Serialize, Deserialize, Debug)]
@@ -82,9 +92,16 @@ impl Shard {
     /// Given some bytes, split the bytes and return a vector of `Shard`s.
     pub fn shard(
         bytes: &Vec<u8>,
-        shard_count: &usize,
+        options: ShardingOptions,
     ) -> Result<Vec<Shard>, ShardError> {
-        let sizes = calculate_shard_sizes(bytes.len(), *shard_count)?;
+        let mut b = bytes;
+        if let Some(key) = options.public_key {
+            b = &encryption::encrypt_bytes(&key, &b)
+                .map_err(|e| ShardError::CryptoError(e))?;
+        }
+
+        let sizes =
+            calculate_shard_sizes(bytes.len(), options.shard_count)?;
         split_bytes(&bytes, &sizes)
     }
 }
@@ -244,7 +261,14 @@ mod tests {
     }
 
     fn test_shard_case(my_bytes: Vec<u8>, n_shards: usize) {
-        let shards = Shard::shard(&my_bytes, &n_shards).unwrap();
+        let shards = Shard::shard(
+            &my_bytes,
+            ShardingOptions {
+                shard_count&: n_shards,
+                public_key: None,
+            },
+        )
+        .unwrap();
         println!("\n\nshards: {:?}\n\n", shards);
 
         // Piece the data from the shards back together

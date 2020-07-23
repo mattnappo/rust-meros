@@ -151,6 +151,22 @@ fn load_keypair(name: &str) -> Result<Keypair, CryptoError> {
     ))
 }
 
+pub fn encrypt_bytes(
+    key: &PublicKey,
+    bytes: &Vec<u8>,
+) -> Result<Vec<u8>, CryptoError> {
+    let mut csprng = rand::thread_rng();
+    encrypt(key, &bytes[..], &mut csprng)
+        .map_err(|e| CryptoError::EncryptionError(e))
+}
+
+pub fn decrypt_bytes(
+    key: &SecretKey,
+    bytes: &Vec<u8>,
+) -> Result<Vec<u8>, CryptoError> {
+    decrypt(key, &bytes[..]).map_err(|e| CryptoError::EncryptionError(e))
+}
+
 pub trait CanEncrypt: CanSerialize {
     type D: CanEncrypt;
 
@@ -166,21 +182,17 @@ impl CanEncrypt for File {
     type D = Self;
 
     fn encrypt(&self, key: PublicKey) -> Result<Vec<u8>, CryptoError> {
-        let mut csprng = rand::thread_rng();
         let bytes = self
             .to_bytes()
             .map_err(|e| CryptoError::SerializationError(e))?;
-
-        encrypt(&key, &bytes, &mut csprng)
-            .map_err(|e| CryptoError::EncryptionError(e))
+        encrypt_bytes(&key, &bytes)
     }
 
     fn decrypt(
         bytes: Vec<u8>,
         key: SecretKey,
     ) -> Result<Self::D, CryptoError> {
-        let decrypted = decrypt(&key, &bytes)
-            .map_err(|e| CryptoError::EncryptionError(e))?;
+        let decrypted = decrypt_bytes(&key, &bytes)?;
 
         <Self::D as CanSerialize>::from_bytes(decrypted)
             .map_err(|e| CryptoError::SerializationError(e))
@@ -191,21 +203,17 @@ impl CanEncrypt for Shard {
     type D = Self;
 
     fn encrypt(&self, key: PublicKey) -> Result<Vec<u8>, CryptoError> {
-        let mut csprng = rand::thread_rng();
         let bytes = self
             .to_bytes()
             .map_err(|e| CryptoError::SerializationError(e))?;
-
-        encrypt(&key, &bytes, &mut csprng)
-            .map_err(|e| CryptoError::EncryptionError(e))
+        encrypt_bytes(&key, &bytes)
     }
 
     fn decrypt(
         bytes: Vec<u8>,
         key: SecretKey,
     ) -> Result<Self::D, CryptoError> {
-        let decrypted = decrypt(&key, &bytes)
-            .map_err(|e| CryptoError::EncryptionError(e))?;
+        let decrypted = decrypt_bytes(&key, &bytes)?;
 
         <Self::D as CanSerialize>::from_bytes(decrypted)
             .map_err(|e| CryptoError::SerializationError(e))
