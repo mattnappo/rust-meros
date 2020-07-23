@@ -110,6 +110,25 @@ pub fn split_bytes(
     Ok(shards)
 }
 
+/// Calculate a vector of recommended shard data sizes for a given
+/// length of data and number of partitions. This algorithm calculates
+/// the most equal distribution of shard sizes.
+fn calculate_shard_sizes(
+    n_bytes: usize,
+    n_partitions: usize,
+) -> Result<Vec<usize>, ShardError> {
+    if n_bytes == 0 || n_partitions == 0 {
+        return Err(
+            ShardError::NullShardData(
+                GeneralError::new(
+                    "cannot calculate shard sizes due to null number of partitions or bytes"
+                )
+            )
+        );
+    }
+    Ok(vec![8usize])
+}
+
 impl PartialEq for Shard {
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data
@@ -168,7 +187,7 @@ mod tests {
     #[test]
     fn test_split_bytes() {
         // Test 1
-        let bytes: Vec<u8> = vec![1, 2, 3, 4, 5, 6, 7];
+        let bytes: Vec<u8> = vec![1, 2, 3, 0, 5, 6, 7];
         let sizes: Vec<usize> = vec![1, 2, 1, 1, 2];
 
         let shards = split_bytes(&bytes, &sizes).unwrap();
