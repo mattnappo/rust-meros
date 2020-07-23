@@ -4,6 +4,7 @@ use crate::{
     db::{IsKey, IsValue},
     GeneralError,
 };
+use math::round::floor;
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::PartialEq,
@@ -104,7 +105,7 @@ pub fn split_bytes(
         let mut sliced_bytes = &bytes[byte_pointer..size + byte_pointer];
 
         shards.push(Shard::new(sliced_bytes.to_vec(), i as u32)?);
-        byte_pointer = byte_pointer + size;
+        byte_pointer += size;
     }
 
     Ok(shards)
@@ -117,6 +118,7 @@ fn calculate_shard_sizes(
     n_bytes: usize,
     n_partitions: usize,
 ) -> Result<Vec<usize>, ShardError> {
+    // Validate the inputs
     if n_bytes == 0 || n_partitions == 0 {
         return Err(
             ShardError::NullShardData(
@@ -126,7 +128,18 @@ fn calculate_shard_sizes(
             )
         );
     }
-    Ok(vec![8usize])
+
+    // The average byte size of each partition
+    let avg = floor((n_bytes / n_partitions) as f64, 0) as usize;
+
+    // The amount of bytes left over
+    let extra = n_bytes % n_partitions;
+
+    let mut sizes: Vec<usize> = vec![avg; n_partitions];
+    let len = sizes.len();
+    sizes[len - 1] += extra;
+
+    Ok(sizes)
 }
 
 impl PartialEq for Shard {
