@@ -23,7 +23,7 @@ impl IsKey for SecretKey {}
 const KEY_LOCATION: &str = "./data/keys/";
 
 /// Specify the type of key and the name of the key.
-enum KeyType {
+pub enum KeyType {
     Public(String),
     Private(String),
 }
@@ -81,7 +81,7 @@ pub fn gen_keypair(
 }
 
 /// Load a public key from the disk given the key name and type.
-fn load_pub_key(key_type: &KeyType) -> Result<PublicKey, CryptoError> {
+pub fn load_pub_key(key_type: &KeyType) -> Result<PublicKey, CryptoError> {
     // Get key path
     let loc = match key_type {
         KeyType::Public(name) => format!("{}{}.pub", KEY_LOCATION, name),
@@ -109,7 +109,9 @@ fn load_pub_key(key_type: &KeyType) -> Result<PublicKey, CryptoError> {
 }
 
 /// Load a private key from the disk given the key name and type.
-fn load_priv_key(key_type: &KeyType) -> Result<SecretKey, CryptoError> {
+pub fn load_priv_key(
+    key_type: &KeyType,
+) -> Result<SecretKey, CryptoError> {
     // Get key path
     let loc = match key_type {
         KeyType::Private(name) => format!("{}{}.priv", KEY_LOCATION, name),

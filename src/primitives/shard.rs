@@ -277,7 +277,7 @@ mod tests {
     fn test_calc_shard_sizes() {
         let t1 = calculate_shard_sizes(10, 3).unwrap();
         let t2 = calculate_shard_sizes(12312238, 27).unwrap();
-        let t3 = calculate_shard_sizes(255 * 2, 19).unwrap();
+        let t3 = calculate_shard_sizes(0xFF * 2, 19).unwrap();
         println!("t1: {:?}\nt2: {:?}", t1, t2);
     }
 
@@ -304,10 +304,10 @@ mod tests {
     }
 
     #[test]
-    fn test_shard() {
+    fn test_sharding() {
         // Simple test case
         let mut b: Vec<u8> = Vec::new();
-        for byte in 0..255 {
+        for byte in 0..0xFF {
             b.push(byte);
             b.push(byte);
         }
@@ -324,5 +324,80 @@ mod tests {
             let len = b.len();
             test_shard_case(b, rng.gen_range(1, len));
         }
+    }
+
+    #[test]
+    fn test_reconstruction() {
+        let mut b: Vec<u8> = Vec::new();
+        for byte in 0..0xFF {
+            b.push(byte);
+        }
+
+        let shards = Shard::shard(
+            &b,
+            ShardingOptions {
+                shard_count: 6,
+                public_key: None,
+                private_key: None,
+            },
+        )
+        .unwrap();
+
+        let reconstructed = Shard::reconstruct(
+            &shards,
+            ShardingOptions {
+                shard_count: 6,
+                public_key: None,
+                private_key: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(b, reconstructed);
+    }
+
+    #[test]
+    fn test_sharding_encryption() {
+        let mut b: Vec<u8> = Vec::new();
+        for byte in 0..0xFF {
+            b.push(byte);
+        }
+
+        let (pub_key, priv_key) = (
+            encryption::load_pub_key(&encryption::KeyType::Public(
+                "testkey".to_string(),
+            ))
+            .unwrap(),
+            encryption::load_priv_key(&encryption::KeyType::Private(
+                "testkey".to_string(),
+            ))
+            .unwrap(),
+        );
+
+        let sc = 11; // Whatever (shard count)
+
+        // Shard with encryption
+        let shards = Shard::shard(
+            &b,
+            ShardingOptions {
+                shard_count: sc,
+                public_key: Some(pub_key),
+                private_key: None,
+            },
+        )
+        .unwrap();
+
+        // Reconstruct
+        let reconstructed_b = Shard::reconstruct(
+            &shards,
+            ShardingOptions {
+                shard_count: sc,
+                public_key: None,
+                private_key: Some(priv_key),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(b, reconstructed_b);
     }
 }
