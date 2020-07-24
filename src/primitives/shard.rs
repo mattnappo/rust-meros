@@ -105,20 +105,27 @@ impl Shard {
         split_bytes(&b, &sizes)
     }
 
-    /// The inverse operation of `shard`: return a byte vector given an array
-    /// of shards.
+    /// The inverse operation of `shard`. Extracts and reconstructs the bytes
+    /// stored inside the given shards.
     pub fn reconstruct(
         shards: &Vec<Shard>,
         options: ShardingOptions,
     ) -> Result<Vec<u8>, CryptoError> {
         // Reconstruct
         let mut data: Vec<u8> = Vec::new();
+        let mut counter = 0;
         for shard in shards.iter() {
-            for byte in shard.data.iter() {
-                data.push(*byte);
+            if shard.index == counter {
+                for byte in shard.data.iter() {
+                    data.push(*byte);
+                }
             }
+            counter += 1;
         }
 
+        return Ok(data); // For debugging (TEMPORARY)
+
+        println!("\n\n -- DUMP ----------------------------\nshards: {:?}\n\nreconstructed: {:?}\n\n------------------------------", shards, data);
         // Decrypt if a key is given
         if let Some(key) = options.private_key {
             return encryption::decrypt_bytes(&key, &data);
@@ -381,7 +388,8 @@ mod tests {
             &b,
             ShardingOptions {
                 shard_count: sc,
-                public_key: Some(pub_key),
+                public_key: None,
+                // public_key: Some(pub_key),
                 private_key: None,
             },
         )
@@ -393,7 +401,8 @@ mod tests {
             ShardingOptions {
                 shard_count: sc,
                 public_key: None,
-                private_key: Some(priv_key),
+                private_key: None,
+                // private_key: Some(priv_key),
             },
         )
         .unwrap();
