@@ -20,6 +20,7 @@ pub enum ShardError {
     TimestampError(SystemTimeError),
     InvalidSplitSizes(GeneralError),
     NullShardData(GeneralError),
+    CannotReconstruct(GeneralError),
     CryptoError(CryptoError),
 }
 
@@ -97,6 +98,7 @@ impl Shard {
     ) -> Result<Vec<Shard>, ShardError> {
         let mut b = bytes;
         if let Some(key) = options.public_key {
+            println!("\n\n I WANT TO ENCRYPT\n\n");
             let b = &encryption::encrypt_bytes(&key, &b)
                 .map_err(|e| ShardError::CryptoError(e))?;
         }
@@ -110,7 +112,7 @@ impl Shard {
     pub fn reconstruct(
         shards: &Vec<Shard>,
         options: ShardingOptions,
-    ) -> Result<Vec<u8>, CryptoError> {
+    ) -> Result<Vec<u8>, ShardError> {
         // Reconstruct
         let mut data: Vec<u8> = Vec::new();
         let mut counter = 0;
@@ -119,16 +121,24 @@ impl Shard {
                 for byte in shard.data.iter() {
                     data.push(*byte);
                 }
+            } else {
+                return Err(
+                    ShardError::CannotReconstruct(
+                        GeneralError::new(
+                            "shard data is out of order: cannot reconstruct shard bytes"
+                    )));
             }
             counter += 1;
         }
 
-        return Ok(data); // For debugging (TEMPORARY)
+        // return Ok(data); // For debugging (TEMPORARY)
 
         println!("\n\n -- DUMP ----------------------------\nshards: {:?}\n\nreconstructed: {:?}\n\n------------------------------", shards, data);
         // Decrypt if a key is given
         if let Some(key) = options.private_key {
-            return encryption::decrypt_bytes(&key, &data);
+            println!("\n\n I WANT TO DECRYPT\n\n");
+            return encryption::decrypt_bytes(&key, &data)
+                .map_err(|e| ShardError::CryptoError(e));
         }
         Ok(data)
     }
@@ -364,7 +374,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sharding_encryption() {
+    fn test_reconstruction_encryption() {
         let mut b: Vec<u8> = Vec::new();
         for byte in 0..0xFF {
             b.push(byte);
@@ -388,8 +398,8 @@ mod tests {
             &b,
             ShardingOptions {
                 shard_count: sc,
-                public_key: None,
-                // public_key: Some(pub_key),
+                // public_key: None,
+                public_key: Some(pub_key),
                 private_key: None,
             },
         )
@@ -401,8 +411,8 @@ mod tests {
             ShardingOptions {
                 shard_count: sc,
                 public_key: None,
-                private_key: None,
-                // private_key: Some(priv_key),
+                // private_key: None,
+                private_key: Some(priv_key),
             },
         )
         .unwrap();
