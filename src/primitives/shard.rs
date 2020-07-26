@@ -22,6 +22,7 @@ pub enum ShardError {
     NullShardData(GeneralError),
     CannotReconstruct(GeneralError),
     CryptoError(CryptoError),
+    Other(GeneralError), // TEMP
 }
 
 /// The structure used for the identification of a shard on the meros
@@ -70,15 +71,16 @@ pub struct ShardingOptions {
 /// local shard database.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Shard {
-    pub data: Vec<u8>,
-    size: usize,
-    timestamp: u128,
-    index: u32,
+    pub data: Vec<u8>, // The actual data of the shard
+    size: usize,       // The size of the data in the shard
+    timestamp: u128,   // The time at which the shard was created
+    index: u32, // The index of the shard in a larger vector of shards
 
-    id: ShardID,
+    id: ShardID, // A unique ID, used for identification on the network
 }
 
 impl Shard {
+    // Create a new shard
     pub fn new(data: Vec<u8>, index: u32) -> Result<Shard, ShardError> {
         let (id, timestamp) = ShardID::new(&data)?;
 
@@ -91,69 +93,70 @@ impl Shard {
         })
     }
 
-    /// Given some bytes, split the bytes and return a vector of `Shard`s.
-    pub fn shard(
-        bytes: &Vec<u8>,
-        options: ShardingOptions,
-    ) -> Result<Vec<u8>, ShardError> {
-        let mut b: Option<Vec<u8>> = None;
-        if let Some(key) = options.public_key {
-            println!("\n\n I WANT TO ENCRYPT\n\n");
-            b = Some(
-                encryption::encrypt_bytes(&key, &bytes)
-                    .map_err(|e| ShardError::CryptoError(e))?,
-            );
+    // Run various checks to determine if a shard is valid.
+    pub fn is_valid(&self) -> bool {
+        // Check the size
+        if self.size != self.data.len() {
+            return false;
         }
 
-        println!("\n\n\nBBBBBBBBBBBBBBBBBBBBBBBBBBBB: {:?}", b);
+        true
 
-        return match b {
-            Some(b) => Ok(b.to_vec()),
-            None => {
-                Err(ShardError::NullShardData(GeneralError::new("stupid")))
-            }
-        };
-        // Ok(b.to_vec()) // Return just the bytes right (without sharding) to see if the error is happening in t he encryption code or somewhere else
+        // Check checksum
+        // Check digital signature
+        // Check ShardID (get timestamp from shard (probably a bad idea))
+    }
 
-        // let sizes = calculate_shard_sizes(b.len(), options.shard_count)?;
-        // split_bytes(&b, &sizes)
+    /// Given some bytes, split the bytes and return a vector of `Shard`s.
+    pub fn shard(
+        bytes: Vec<u8>,
+        options: ShardingOptions,
+    ) -> Result<Vec<Shard>, ShardError> {
+        // Encrypt the bytes
+        let mut b = bytes;
+        if let Some(key) = options.public_key {
+            b = encryption::encrypt_bytes(&key, &b)
+                .map_err(|e| ShardError::CryptoError(e))?;
+        }
+
+        // Shard the (possibly encrypted) bytes and return
+        let sizes = calculate_shard_sizes(b.len(), options.shard_count)?;
+        split_bytes(&b, &sizes)
     }
 
     /// The inverse operation of `shard`. Extracts and reconstructs the bytes
     /// stored inside the given shards.
     pub fn reconstruct(
-        shards: &Vec<u8>, // Just bytes for now for the same debugging purposes
+        shards: &Vec<Shard>, // Just bytes for now for the same debugging purposes
         options: ShardingOptions,
     ) -> Result<Vec<u8>, ShardError> {
         // Reconstruct
-        /*
         let mut data: Vec<u8> = Vec::new();
         let mut counter = 0;
         for shard in shards.iter() {
-            if shard.index == counter {
+            // For each shard
+            // Validate the shard
+            if shard.is_valid() && shard.index == counter {
+                // Extract the shard data
                 for byte in shard.data.iter() {
                     data.push(*byte);
                 }
             } else {
-                return Err(
-                    ShardError::CannotReconstruct(
-                        GeneralError::new(
-                            "shard data is out of order: cannot reconstruct shard bytes"
-                    )));
+                return Err(ShardError::CannotReconstruct(
+                    GeneralError::new(
+                        "invalid shard; cannot use it to reconstruct",
+                    ),
+                ));
             }
             counter += 1;
         }
-        */
-
-        // return Ok(data); // For debugging (TEMPORARY)
 
         // Decrypt if a key is given
         if let Some(key) = options.private_key {
-            println!("\n\n I WANT TO DECRYPT\n\n");
-            return encryption::decrypt_bytes(&key, &shards)
+            return encryption::decrypt_bytes(&key, &data)
                 .map_err(|e| ShardError::CryptoError(e));
         }
-        Ok(shards.to_vec())
+        Ok(data)
     }
 }
 
@@ -313,7 +316,7 @@ mod tests {
 
     fn test_shard_case(my_bytes: Vec<u8>, n_shards: usize) {
         let shards = Shard::shard(
-            &my_bytes,
+            my_bytes.clone(),
             ShardingOptions {
                 shard_count: n_shards,
                 public_key: None,
@@ -321,9 +324,7 @@ mod tests {
             },
         )
         .unwrap();
-        // println!("\n\nshards: {:?}\n\n", shards);
 
-        /* // TEMP
         // Piece the data from the shards back together
         let mut data: Vec<u8> = Vec::new();
         for shard in shards.iter() {
@@ -332,11 +333,11 @@ mod tests {
             }
         }
         assert_eq!(my_bytes, data);
-        */
     }
 
+    // Test `Shard::shard` without encryption
     #[test]
-    fn test_sharding() {
+    fn test_shard_no_encrypt() {
         // Simple test case
         let mut b: Vec<u8> = Vec::new();
         for byte in 0..0xFF {
@@ -359,16 +360,18 @@ mod tests {
     }
 
     #[test]
-    fn test_reconstruction() {
+    fn test_reconstruct_no_encrypt() {
         let mut b: Vec<u8> = Vec::new();
         for byte in 0..0xFF {
             b.push(byte);
         }
 
+        let shard_count = 6;
+
         let shards = Shard::shard(
-            &b,
+            b.clone(),
             ShardingOptions {
-                shard_count: 6,
+                shard_count,
                 public_key: None,
                 private_key: None,
             },
@@ -378,7 +381,7 @@ mod tests {
         let reconstructed = Shard::reconstruct(
             &shards,
             ShardingOptions {
-                shard_count: 6,
+                shard_count,
                 public_key: None,
                 private_key: None,
             },
@@ -389,7 +392,7 @@ mod tests {
     }
 
     #[test]
-    fn test_reconstruction_encryption() {
+    fn test_reconstruct_encrypt() {
         let mut b: Vec<u8> = Vec::new();
         for byte in 0..0xFF {
             b.push(byte);
@@ -410,7 +413,7 @@ mod tests {
 
         // Shard with encryption
         let shards = Shard::shard(
-            &b,
+            b.clone(),
             ShardingOptions {
                 shard_count: sc,
                 // public_key: None,
@@ -433,48 +436,5 @@ mod tests {
         .unwrap();
 
         assert_eq!(b, reconstructed_b);
-    }
-
-    #[test]
-    fn test_reconstruction_encryption_new() {
-        let mut b: Vec<u8> = Vec::new();
-        for byte in 0..0xFF {
-            b.push(byte);
-        }
-
-        let (pub_key, priv_key) = (
-            encryption::load_pub_key(&encryption::KeyType::Public(
-                "testkey".to_string(),
-            ))
-            .unwrap(),
-            encryption::load_priv_key(&encryption::KeyType::Private(
-                "testkey".to_string(),
-            ))
-            .unwrap(),
-        );
-
-        let shard_count = 11; // Whatever (shard count)
-
-        let shards = Shard::shard(
-            &b,
-            ShardingOptions {
-                shard_count,
-                public_key: Some(pub_key),
-                private_key: None,
-            },
-        )
-        .unwrap(); // these actually aren't shards, rather just the encrypted bytes // TEMP
-
-        let extracted_decrypted_bytes = Shard::reconstruct(
-            &shards,
-            ShardingOptions {
-                shard_count,
-                public_key: None,
-                private_key: Some(priv_key),
-            },
-        )
-        .unwrap();
-
-        assert_eq!(b, extracted_decrypted_bytes);
     }
 }
