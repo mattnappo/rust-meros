@@ -150,7 +150,7 @@ pub fn encrypt_bytes(
     bytes: &Vec<u8>,
 ) -> Result<Vec<u8>, CryptoError> {
     let mut csprng = rand::thread_rng();
-    encrypt(key, &bytes[..], &mut csprng)
+    encrypt(key, &bytes, &mut csprng)
         .map_err(|e| CryptoError::EncryptionError(e))
 }
 
@@ -158,7 +158,7 @@ pub fn decrypt_bytes(
     key: &SecretKey,
     bytes: &Vec<u8>,
 ) -> Result<Vec<u8>, CryptoError> {
-    decrypt(key, &bytes[..]).map_err(|e| CryptoError::EncryptionError(e))
+    decrypt(key, &bytes).map_err(|e| CryptoError::EncryptionError(e))
 }
 
 pub trait CanEncrypt: CanSerialize {
@@ -260,4 +260,13 @@ mod tests {
 
     #[test]
     fn test_load_keypair() {}
+
+    #[test]
+    fn test_encrypt_decrypt_bytes() {
+        let b = vec![1u8, 2, 3, 4, 5, 6, 5, 6, 7, 8, 7, 8, 9];
+        let (pr, pu) = gen_keypair("key", false).unwrap();
+        let encrypted = encrypt_bytes(&pu, &b).unwrap();
+        let decrypted = decrypt_bytes(&pr, &encrypted).unwrap();
+        assert_eq!(b, decrypted);
+    }
 }
