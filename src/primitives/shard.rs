@@ -96,14 +96,24 @@ impl Shard {
         bytes: &Vec<u8>,
         options: ShardingOptions,
     ) -> Result<Vec<u8>, ShardError> {
-        let mut b = bytes;
+        let mut b: Option<Vec<u8>> = None;
         if let Some(key) = options.public_key {
             println!("\n\n I WANT TO ENCRYPT\n\n");
-            let b = &encryption::encrypt_bytes(&key, &b)
-                .map_err(|e| ShardError::CryptoError(e))?;
+            b = Some(
+                encryption::encrypt_bytes(&key, &bytes)
+                    .map_err(|e| ShardError::CryptoError(e))?,
+            );
         }
 
-        Ok(b.to_vec()) // Return just the bytes right (without sharding) to see if the error is happening in t he encryption code or somewhere else
+        println!("\n\n\nBBBBBBBBBBBBBBBBBBBBBBBBBBBB: {:?}", b);
+
+        return match b {
+            Some(b) => Ok(b.to_vec()),
+            None => {
+                Err(ShardError::NullShardData(GeneralError::new("stupid")))
+            }
+        };
+        // Ok(b.to_vec()) // Return just the bytes right (without sharding) to see if the error is happening in t he encryption code or somewhere else
 
         // let sizes = calculate_shard_sizes(b.len(), options.shard_count)?;
         // split_bytes(&b, &sizes)
@@ -423,5 +433,48 @@ mod tests {
         .unwrap();
 
         assert_eq!(b, reconstructed_b);
+    }
+
+    #[test]
+    fn test_reconstruction_encryption_new() {
+        let mut b: Vec<u8> = Vec::new();
+        for byte in 0..0xFF {
+            b.push(byte);
+        }
+
+        let (pub_key, priv_key) = (
+            encryption::load_pub_key(&encryption::KeyType::Public(
+                "testkey".to_string(),
+            ))
+            .unwrap(),
+            encryption::load_priv_key(&encryption::KeyType::Private(
+                "testkey".to_string(),
+            ))
+            .unwrap(),
+        );
+
+        let shard_count = 11; // Whatever (shard count)
+
+        let shards = Shard::shard(
+            &b,
+            ShardingOptions {
+                shard_count,
+                public_key: Some(pub_key),
+                private_key: None,
+            },
+        )
+        .unwrap(); // these actually aren't shards, rather just the encrypted bytes // TEMP
+
+        let extracted_decrypted_bytes = Shard::reconstruct(
+            &shards,
+            ShardingOptions {
+                shard_count,
+                public_key: None,
+                private_key: Some(priv_key),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(b, extracted_decrypted_bytes);
     }
 }
