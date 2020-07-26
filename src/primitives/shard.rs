@@ -95,7 +95,7 @@ impl Shard {
     pub fn shard(
         bytes: &Vec<u8>,
         options: ShardingOptions,
-    ) -> Result<Vec<Shard>, ShardError> {
+    ) -> Result<Vec<u8>, ShardError> {
         let mut b = bytes;
         if let Some(key) = options.public_key {
             println!("\n\n I WANT TO ENCRYPT\n\n");
@@ -103,17 +103,20 @@ impl Shard {
                 .map_err(|e| ShardError::CryptoError(e))?;
         }
 
-        let sizes = calculate_shard_sizes(b.len(), options.shard_count)?;
-        split_bytes(&b, &sizes)
+        Ok(b.to_vec()) // Return just the bytes right (without sharding) to see if the error is happening in t he encryption code or somewhere else
+
+        // let sizes = calculate_shard_sizes(b.len(), options.shard_count)?;
+        // split_bytes(&b, &sizes)
     }
 
     /// The inverse operation of `shard`. Extracts and reconstructs the bytes
     /// stored inside the given shards.
     pub fn reconstruct(
-        shards: &Vec<Shard>,
+        shards: &Vec<u8>, // Just bytes for now for the same debugging purposes
         options: ShardingOptions,
     ) -> Result<Vec<u8>, ShardError> {
         // Reconstruct
+        /*
         let mut data: Vec<u8> = Vec::new();
         let mut counter = 0;
         for shard in shards.iter() {
@@ -130,17 +133,17 @@ impl Shard {
             }
             counter += 1;
         }
+        */
 
         // return Ok(data); // For debugging (TEMPORARY)
 
-        println!("\n\n -- DUMP ----------------------------\nshards: {:?}\n\nreconstructed: {:?}\n\n------------------------------", shards, data);
         // Decrypt if a key is given
         if let Some(key) = options.private_key {
             println!("\n\n I WANT TO DECRYPT\n\n");
-            return encryption::decrypt_bytes(&key, &data)
+            return encryption::decrypt_bytes(&key, &shards)
                 .map_err(|e| ShardError::CryptoError(e));
         }
-        Ok(data)
+        Ok(shards.to_vec())
     }
 }
 
@@ -310,6 +313,7 @@ mod tests {
         .unwrap();
         // println!("\n\nshards: {:?}\n\n", shards);
 
+        /* // TEMP
         // Piece the data from the shards back together
         let mut data: Vec<u8> = Vec::new();
         for shard in shards.iter() {
@@ -318,6 +322,7 @@ mod tests {
             }
         }
         assert_eq!(my_bytes, data);
+        */
     }
 
     #[test]
