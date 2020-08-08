@@ -104,6 +104,7 @@ impl PartialEq for File {
         self.filename == other.filename && self.id == other.id
     }
 }
+
 impl super::Hashable for File {
     fn hash(&self) -> hash::Hash {
         [0 as u8; 32] // temp

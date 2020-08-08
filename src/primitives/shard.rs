@@ -22,7 +22,6 @@ pub enum ShardError {
     NullShardData(GeneralError),
     CannotReconstruct(GeneralError),
     CryptoError(CryptoError),
-    Other(GeneralError), // TEMP
 }
 
 /// The structure used for the identification of a shard on the meros
