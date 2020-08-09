@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    crypto::{encryption::CanEncrypt, hash},
+    crypto::hash,
     db::{IsKey, IsValue},
 };
 
