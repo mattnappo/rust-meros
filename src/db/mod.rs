@@ -10,10 +10,3 @@ pub enum DatabaseError {
 
 pub trait IsKey {} // Get rid of these
 pub trait IsValue {}
-
-// TODO: Add lifetimes for this
-/// A key-value pair for the database.
-pub struct Pair<K: IsKey, V: IsValue> {
-    k: &K,
-    v: &V,
-}

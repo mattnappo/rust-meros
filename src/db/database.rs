@@ -10,47 +10,49 @@ pub enum DbType {
 /// The main database structure used to store the metadata and node
 /// information for all of the files on the network, and the shards
 /// on each local node.
-pub struct Database {
+pub struct Database<K: IsKey, V: IsValue> {
     name: String,
     database: sled::Db,
-    db_type: DbType,
+
+    pair: Option<(K, V)>,
 }
 
-impl Database {
+impl<K: IsKey, V: IsValue> Database<K, V> {
     /// Create and return a new database if it does not already
     /// exist.
-    pub fn new(
-        name: &str,
-        db_type: DbType,
-    ) -> Result<Self, DatabaseError> {
-        // Determine the string location for the database
-        let loc = match &db_type {
-            File => "file",
-            Shard => "shard",
-        };
-
+    pub fn new(name: &str) -> Result<Self, DatabaseError> {
         // Create the new database
-        let database =
-            sled::open(format!("{}/{}/{}", super::ROOT, loc, name))
-                .map_err(|e| super::DatabaseError::Internal(e))?;
+        let database = sled::open(format!("{}/{}", ROOT, name))
+            .map_err(|e| DatabaseError::Internal(e))?;
 
         Ok(Self {
             name: name.to_string(),
             database,
-            db_type,
+
+            pair: None,
         })
     }
 
     /// Insert a record into the database.
-    fn insert(&mut self, key: K, val: V) -> DatabaseError {}
+    fn insert(&mut self, k: &K, v: &V) -> Result<(), DatabaseError> {
+        self.database
+            .insert("test", "testing")
+            .map_err(|e| DatabaseError::Internal(e));
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::primitives::file::{File, FileID};
+    use std::path::Path;
 
     #[test]
-    fn test_new_db() {
-        Database::new("test_db", DbType::File).unwrap();
+    fn test_insert() {
+        let mut db = Database::<FileID, File>::new("test_db").unwrap();
+        let file = &File::new(Path::new("./testfile.txt")).unwrap();
+
+        db.insert(&file.id, &file).unwrap();
     }
 }

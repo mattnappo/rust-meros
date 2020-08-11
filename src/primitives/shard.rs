@@ -75,7 +75,7 @@ pub struct Shard {
     timestamp: u128,   // The time at which the shard was created
     index: u32, // The index of the shard in a larger vector of shards
 
-    id: ShardID, // A unique ID, used for identification on the network
+    pub id: ShardID, // A unique ID, used for identification on the network
 }
 
 impl Shard {
