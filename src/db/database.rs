@@ -41,10 +41,8 @@ impl Database {
         })
     }
 
-    // Insert a record into the database.
-    // fn insert(&mut self, key: K, val: V) -> DatabaseError {
-
-    //}
+    /// Insert a record into the database.
+    fn insert(&mut self, key: K, val: V) -> DatabaseError {}
 }
 
 #[cfg(test)]
