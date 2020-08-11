@@ -36,7 +36,10 @@ impl<K: IsKey, V: IsValue> Database<K, V> {
     /// Insert a record into the database.
     fn insert(&mut self, k: &K, v: &V) -> Result<(), DatabaseError> {
         self.database
-            .insert("test", "testing")
+            .insert(
+                k.to_bytes().map_err(|e| DatabaseError::Serialize(e))?,
+                v.to_bytes().map_err(|e| DatabaseError::Serialize(e))?,
+            )
             .map_err(|e| DatabaseError::Internal(e));
         Ok(())
     }

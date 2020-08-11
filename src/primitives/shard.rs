@@ -2,7 +2,7 @@ use crate::{
     core::Compressable,
     crypto::{encryption, hash, CryptoError},
     db::{IsKey, IsValue},
-    GeneralError,
+    CanSerialize, GeneralError,
 };
 use ecies_ed25519::{PublicKey, SecretKey};
 use math::round::floor;
@@ -56,6 +56,15 @@ impl PartialEq for ShardID {
 }
 
 impl IsKey for ShardID {}
+impl CanSerialize for ShardID {
+    type S = Self;
+    fn to_bytes(&self) -> bincode::Result<Vec<u8>> {
+        bincode::serialize(self)
+    }
+    fn from_bytes(bytes: Vec<u8>) -> bincode::Result<Self> {
+        bincode::deserialize(&bytes[..])
+    }
+}
 
 /// A structure used to configure how a vector of bytes is
 /// to be sharded.
@@ -238,7 +247,7 @@ impl Compressable for Shard { fn compress(&self) -> Vec<u8> {}
 }
 */
 
-impl crate::CanSerialize for Shard {
+impl CanSerialize for Shard {
     type S = Self;
     fn to_bytes(&self) -> bincode::Result<Vec<u8>> {
         bincode::serialize(self)

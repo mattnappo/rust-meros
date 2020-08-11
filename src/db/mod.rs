@@ -1,4 +1,5 @@
 pub mod database;
+use crate::CanSerialize;
 
 const ROOT: &str = "./data/db";
 
@@ -6,7 +7,13 @@ const ROOT: &str = "./data/db";
 #[derive(Debug)]
 pub enum DatabaseError {
     Internal(sled::Error),
+    Serialize(bincode::Error),
 }
 
-pub trait IsKey {} // Get rid of these
-pub trait IsValue {}
+/// The bounding trait representing any type that can act as a
+/// key in the database.
+pub trait IsKey: CanSerialize {}
+
+/// The bounding trait representing any type that can act as a
+/// value in the database.
+pub trait IsValue: CanSerialize {}

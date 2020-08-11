@@ -8,6 +8,7 @@ use std::{
 use crate::{
     crypto::hash,
     db::{IsKey, IsValue},
+    CanSerialize,
 };
 
 /// The structure used for the identification of a file on the meros
@@ -42,6 +43,15 @@ impl PartialEq for FileID {
 }
 
 impl IsKey for FileID {}
+impl CanSerialize for FileID {
+    type S = Self;
+    fn to_bytes(&self) -> bincode::Result<Vec<u8>> {
+        bincode::serialize(self)
+    }
+    fn from_bytes(bytes: Vec<u8>) -> bincode::Result<Self::S> {
+        bincode::deserialize(&bytes[..])
+    }
+}
 
 /// All possible errors that could be returned from `File`'s methods.
 #[derive(Debug)]
@@ -113,7 +123,7 @@ impl super::Hashable for File {
 
 impl IsValue for File {}
 
-impl crate::CanSerialize for File {
+impl CanSerialize for File {
     type S = Self;
     fn to_bytes(&self) -> bincode::Result<Vec<u8>> {
         bincode::serialize(self)
@@ -126,7 +136,6 @@ impl crate::CanSerialize for File {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::CanSerialize;
     use std::path::Path;
 
     #[test]
