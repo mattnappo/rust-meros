@@ -2,7 +2,7 @@ use super::*;
 use sled;
 
 /// The different types of data that a `Database` can hold.
-pub enum DBType {
+pub enum DbType {
     File,
     Shard,
 }
@@ -13,13 +13,16 @@ pub enum DBType {
 pub struct Database {
     name: String,
     database: sled::Db,
-    db_type: DBType,
+    db_type: DbType,
 }
 
 impl Database {
     /// Create and return a new database if it does not already
     /// exist.
-    fn new(name: &str, db_type: DBType) -> Result<Self, DatabaseError> {
+    pub fn new(
+        name: &str,
+        db_type: DbType,
+    ) -> Result<Self, DatabaseError> {
         // Determine the string location for the database
         let loc = match &db_type {
             File => "file",
@@ -39,5 +42,17 @@ impl Database {
     }
 
     // Insert a record into the database.
-    // fn insert(&mut self, key: K, val: V) -> DatabaseError {}
+    // fn insert(&mut self, key: K, val: V) -> DatabaseError {
+
+    //}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_db() {
+        Database::new("test_db", DbType::File).unwrap();
+    }
 }
