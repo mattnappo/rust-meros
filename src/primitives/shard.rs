@@ -1,5 +1,4 @@
 use crate::{
-    core::Compressable,
     crypto::{encryption, hash, CryptoError},
     db::{IsKey, IsValue},
     CanSerialize, GeneralError,
@@ -319,7 +318,7 @@ mod tests {
         let t1 = calculate_shard_sizes(10, 3).unwrap();
         let t2 = calculate_shard_sizes(12312238, 27).unwrap();
         let t3 = calculate_shard_sizes(0xFF * 2, 19).unwrap();
-        println!("t1: {:?}\nt2: {:?}", t1, t2);
+        println!("t1: {:?}\nt2: {:?}\nt3: {:?}", t1, t2, t3);
     }
 
     fn test_shard_case(my_bytes: Vec<u8>, n_shards: usize) {
@@ -356,10 +355,10 @@ mod tests {
 
         // Do some more automated testing
         let mut rng = rand::thread_rng();
-        for i in 0..10 {
+        for _i in 0..10 {
             // Generate a lot of bytes
             let mut b: Vec<u8> = Vec::new();
-            for i in 0..rng.gen_range(1, 100_000) {
+            for _i in 0..rng.gen_range(1, 100_000) {
                 b.push(rng.gen_range(0, 0xFF) as u8);
             }
             let len = b.len();
