@@ -1,17 +1,19 @@
+use crc32fast::Hasher;
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::PartialEq,
+    fs,
     io::prelude::*,
+    path,
     time::{SystemTime, SystemTimeError, UNIX_EPOCH},
 };
 
+use super::shard::{ShardConfig, ShardingOptions};
 use crate::{
     crypto::hash,
     db::{IsKey, IsValue},
     CanSerialize,
 };
-
-use super::ShardConfig;
 
 /// The structure used for the identification of a file on the meros
 /// network.
@@ -32,9 +34,12 @@ impl FileID {
             [filename.as_bytes(), &bytes[..], time.to_string().as_bytes()]
                 .concat()
                 .to_vec();
-        Ok((Self {
-            id: hash::hash_bytes(data),
-        }, time))
+        Ok((
+            Self {
+                id: hash::hash_bytes(data),
+            },
+            time,
+        ))
     }
 }
 
@@ -72,7 +77,7 @@ pub struct File {
     pub filename: String,
     pub id: FileID,
     pub creation_date: u128,
-    // shard_db: Option<database::Database<NodeInfo>>,
+    // locations: Option<database::Database<NodeInfo>>,
     checksum: u32,
     shard_config: Option<ShardConfig>,
     // signature: DigitalSignature, // mock type, tbi TODO (to be implemented)
@@ -83,9 +88,9 @@ impl File {
     /// This method does not distribute a file over the meros network.
     /// However, it does prepare the file for sharding by pre-calculating
     /// the shards and assigning them to null nodes (temporarily).
-    pub fn new(path: &std::path::Path) -> Result<Self, FileError> {
+    pub fn new(path: &path::Path) -> Result<Self, FileError> {
         let mut file =
-            std::fs::File::open(path).map_err(|e| FileError::IO(e))?;
+            fs::File::open(path).map_err(|e| FileError::IO(e))?;
 
         let mut buf = Vec::new();
         file.read_to_end(&mut buf).map_err(|e| FileError::IO(e))?;
@@ -105,19 +110,28 @@ impl File {
             None => return invalid_path,
         };
         let (file_id, hash_date) = FileID::new(filename, &buf)
-                .map_err(|e| FileError::SystemTimeError(e))?;
+            .map_err(|e| FileError::SystemTimeError(e))?;
 
         let file = Self {
             filename: filename.to_string(),
             id: file_id,
             creation_date: hash_date,
-
+            checksum: {
+                let mut hasher = Hasher::new();
+                hasher.update(&buf);
+                hasher.finalize()
+            },
+            shard_config: None,
         };
 
         Ok(file)
     }
-    
-    pub fn new_shard
+
+    /// A nice abstraction to create a new file and shard it.
+    fn new_with_sharding(
+        path: &path::Path,
+        options: ShardingOptions,
+    ) -> Result<Self, FileError>;
 }
 
 impl PartialEq for File {

@@ -76,10 +76,21 @@ pub struct ShardingOptions {
 
 /// A structure used to identify how sharded bytes were sharded.
 /// This exists mainly for validation purposes.
+#[derive(Serialize, Deserialize, Debug)]
 pub struct ShardConfig {
     encryption: bool,
     compression: bool,
     sizes: Vec<usize>,
+}
+
+impl CanSerialize for ShardConfig {
+    type S = Self;
+    fn to_bytes(&self) -> bincode::Result<Vec<u8>> {
+        bincode::serialize(self)
+    }
+    fn from_bytes(bytes: Vec<u8>) -> bincode::Result<Self> {
+        bincode::deserialize(&bytes[..])
+    }
 }
 
 /// The structure representing a `Shard` to be stored in a node's
@@ -136,14 +147,14 @@ impl Shard {
 
         // Shard the (possibly encrypted) bytes and return
         let sizes = calculate_shard_sizes(b.len(), options.shard_count)?;
-        (
-            split_bytes(&b, &sizes),
+        Ok((
+            split_bytes(&b, &sizes)?,
             ShardConfig {
-                encrypted: options.public_key.is_none(),
+                encryption: options.public_key.is_none(),
                 compression: options.compress,
                 sizes,
             },
-        )
+        ))
     }
 
     /// The inverse operation of `shard`. Extracts and reconstructs the bytes
@@ -343,13 +354,14 @@ mod tests {
                 shard_count: n_shards,
                 public_key: None,
                 private_key: None,
+                compress: false,
             },
         )
         .unwrap();
 
         // Piece the data from the shards back together
         let mut data: Vec<u8> = Vec::new();
-        for shard in shards.iter() {
+        for shard in shards.0.iter() {
             for byte in shard.data.iter() {
                 data.push(*byte);
             }
@@ -396,16 +408,18 @@ mod tests {
                 shard_count,
                 public_key: None,
                 private_key: None,
+                compress: false,
             },
         )
         .unwrap();
 
         let reconstructed = Shard::reconstruct(
-            &shards,
+            &shards.0,
             ShardingOptions {
                 shard_count,
                 public_key: None,
                 private_key: None,
+                compress: false,
             },
         )
         .unwrap();
@@ -441,18 +455,20 @@ mod tests {
                 // public_key: None,
                 public_key: Some(pub_key),
                 private_key: None,
+                compress: false,
             },
         )
         .unwrap();
 
         // Reconstruct
         let reconstructed_b = Shard::reconstruct(
-            &shards,
+            &shards.0, // The shards themselves
             ShardingOptions {
                 shard_count: sc,
                 public_key: None,
                 // private_key: None,
                 private_key: Some(priv_key),
+                compress: false,
             },
         )
         .unwrap();
