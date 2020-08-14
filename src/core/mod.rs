@@ -1,5 +1,3 @@
-use crate::primitives::shard::Shard;
-
 /// The errors that could be thrown by the `core` module.
 pub enum CoreError {}
 

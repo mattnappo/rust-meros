@@ -11,6 +11,8 @@ use crate::{
     CanSerialize,
 };
 
+use super::ShardConfig;
+
 /// The structure used for the identification of a file on the meros
 /// network.
 #[derive(Debug, Serialize, Deserialize)]
@@ -22,7 +24,7 @@ impl FileID {
     pub fn new(
         filename: &str,
         bytes: &Vec<u8>,
-    ) -> Result<Self, SystemTimeError> {
+    ) -> Result<(Self, u128), SystemTimeError> {
         let time = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs()
             as u128;
 
@@ -30,9 +32,9 @@ impl FileID {
             [filename.as_bytes(), &bytes[..], time.to_string().as_bytes()]
                 .concat()
                 .to_vec();
-        Ok(Self {
+        Ok((Self {
             id: hash::hash_bytes(data),
-        })
+        }, time))
     }
 }
 
@@ -68,8 +70,12 @@ pub enum FileError {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct File {
     pub filename: String,
-    // shard_db: Option<database::Database<Shard>>,
     pub id: FileID,
+    pub creation_date: u128,
+    // shard_db: Option<database::Database<NodeInfo>>,
+    checksum: u32,
+    shard_config: Option<ShardConfig>,
+    // signature: DigitalSignature, // mock type, tbi TODO (to be implemented)
 }
 
 impl File {
@@ -98,15 +104,20 @@ impl File {
             },
             None => return invalid_path,
         };
+        let (file_id, hash_date) = FileID::new(filename, &buf)
+                .map_err(|e| FileError::SystemTimeError(e))?;
 
         let file = Self {
             filename: filename.to_string(),
-            id: FileID::new(filename, &buf)
-                .map_err(|e| FileError::SystemTimeError(e))?,
+            id: file_id,
+            creation_date: hash_date,
+
         };
 
         Ok(file)
     }
+    
+    pub fn new_shard
 }
 
 impl PartialEq for File {

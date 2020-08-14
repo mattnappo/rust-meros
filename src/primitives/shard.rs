@@ -1,5 +1,4 @@
 use crate::{
-    core::Compressable,
     crypto::{encryption, hash, CryptoError},
     db::{IsKey, IsValue},
     CanSerialize, GeneralError,
@@ -72,7 +71,15 @@ pub struct ShardingOptions {
     shard_count: usize, // The amount of shards (data partitions)
     public_key: Option<PublicKey>, // The encryption key (for sharding)
     private_key: Option<SecretKey>, // The decryption key (for reconstructing)
-                                    // compress: bool,
+    compress: bool,
+}
+
+/// A structure used to identify how sharded bytes were sharded.
+/// This exists mainly for validation purposes.
+pub struct ShardConfig {
+    encryption: bool,
+    compression: bool,
+    sizes: Vec<usize>,
 }
 
 /// The structure representing a `Shard` to be stored in a node's
@@ -119,7 +126,7 @@ impl Shard {
     pub fn shard(
         bytes: Vec<u8>,
         options: ShardingOptions,
-    ) -> Result<Vec<Shard>, ShardError> {
+    ) -> Result<(Vec<Shard>, ShardConfig), ShardError> {
         // Encrypt the bytes
         let mut b = bytes;
         if let Some(key) = options.public_key {
@@ -129,7 +136,14 @@ impl Shard {
 
         // Shard the (possibly encrypted) bytes and return
         let sizes = calculate_shard_sizes(b.len(), options.shard_count)?;
-        split_bytes(&b, &sizes)
+        (
+            split_bytes(&b, &sizes),
+            ShardConfig {
+                encrypted: options.public_key.is_none(),
+                compression: options.compress,
+                sizes,
+            },
+        )
     }
 
     /// The inverse operation of `shard`. Extracts and reconstructs the bytes
@@ -319,7 +333,7 @@ mod tests {
         let t1 = calculate_shard_sizes(10, 3).unwrap();
         let t2 = calculate_shard_sizes(12312238, 27).unwrap();
         let t3 = calculate_shard_sizes(0xFF * 2, 19).unwrap();
-        println!("t1: {:?}\nt2: {:?}", t1, t2);
+        println!("t1: {:?}\nt2: {:?}\nt3: {:?}", t1, t2, t3);
     }
 
     fn test_shard_case(my_bytes: Vec<u8>, n_shards: usize) {
@@ -356,10 +370,10 @@ mod tests {
 
         // Do some more automated testing
         let mut rng = rand::thread_rng();
-        for i in 0..10 {
+        for _i in 0..10 {
             // Generate a lot of bytes
             let mut b: Vec<u8> = Vec::new();
-            for i in 0..rng.gen_range(1, 100_000) {
+            for _i in 0..rng.gen_range(1, 100_000) {
                 b.push(rng.gen_range(0, 0xFF) as u8);
             }
             let len = b.len();
