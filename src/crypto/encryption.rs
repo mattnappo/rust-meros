@@ -223,14 +223,16 @@ mod tests {
 
     #[test]
     fn test_encrypt_file() {
-        let file = File::new(Path::new("testfile.txt")).unwrap();
+        let (file, _) =
+            File::new(Path::new("testfile.txt"), None).unwrap();
         let keypair = gen_keypair("testkey", false).unwrap();
         file.encrypt(keypair.1).unwrap();
     }
 
     #[test]
     fn test_decrypt_file() {
-        let file = File::new(Path::new("testfile.txt")).unwrap();
+        let (file, _) =
+            File::new(Path::new("testfile.txt"), None).unwrap();
         let keypair = gen_keypair("testkey", false).unwrap();
         let encrypted = file.encrypt(keypair.1).unwrap();
         let decrypted = File::decrypt(encrypted, keypair.0).unwrap();

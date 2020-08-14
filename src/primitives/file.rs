@@ -1,17 +1,19 @@
+use crc32fast::Hasher;
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::PartialEq,
+    fs,
     io::prelude::*,
+    path,
     time::{SystemTime, SystemTimeError, UNIX_EPOCH},
 };
 
+use super::shard::{Shard, ShardConfig, ShardError, ShardingOptions};
 use crate::{
     crypto::hash,
     db::{IsKey, IsValue},
     CanSerialize,
 };
-
-use super::ShardConfig;
 
 /// The structure used for the identification of a file on the meros
 /// network.
@@ -32,9 +34,12 @@ impl FileID {
             [filename.as_bytes(), &bytes[..], time.to_string().as_bytes()]
                 .concat()
                 .to_vec();
-        Ok((Self {
-            id: hash::hash_bytes(data),
-        }, time))
+        Ok((
+            Self {
+                id: hash::hash_bytes(data),
+            },
+            time,
+        ))
     }
 }
 
@@ -61,6 +66,7 @@ pub enum FileError {
     IO(std::io::Error),
     InvalidFilepath(crate::GeneralError),
     SystemTimeError(SystemTimeError),
+    ShardError(ShardError),
 }
 
 /// The structure representing a file on the meros network. This structure
@@ -72,8 +78,8 @@ pub struct File {
     pub filename: String,
     pub id: FileID,
     pub creation_date: u128,
-    // shard_db: Option<database::Database<NodeInfo>>,
-    checksum: u32,
+    // locations: Option<database::Database<NodeInfo>>,
+    checksum: u32, // A checksum of just the bytes of the file
     shard_config: Option<ShardConfig>,
     // signature: DigitalSignature, // mock type, tbi TODO (to be implemented)
 }
@@ -83,20 +89,21 @@ impl File {
     /// This method does not distribute a file over the meros network.
     /// However, it does prepare the file for sharding by pre-calculating
     /// the shards and assigning them to null nodes (temporarily).
-    pub fn new(path: &std::path::Path) -> Result<Self, FileError> {
-        let mut file =
-            std::fs::File::open(path).map_err(|e| FileError::IO(e))?;
+    pub fn new(
+        path: &path::Path,
+        sharding_options: Option<ShardingOptions>,
+    ) -> Result<(Self, Option<Vec<Shard>>), FileError> {
+        // Read the file from the disk to generate validation metadata
+        let mut fd = fs::File::open(path).map_err(|e| FileError::IO(e))?;
+        let mut buf = Vec::new(); // The contents of the file
+        fd.read_to_end(&mut buf).map_err(|e| FileError::IO(e))?;
 
-        let mut buf = Vec::new();
-        file.read_to_end(&mut buf).map_err(|e| FileError::IO(e))?;
-
+        // Get the name of the file (clean this up somehow TODO)
         let invalid_path =
             Err(FileError::InvalidFilepath(crate::GeneralError::new(
                 format!("{} is an invalid filepath", path.display())
                     .as_str(),
             )));
-
-        // clean this up somehow
         let filename = match path.file_name() {
             Some(name) => match name.to_str() {
                 Some(s) => s,
@@ -104,20 +111,36 @@ impl File {
             },
             None => return invalid_path,
         };
-        let (file_id, hash_date) = FileID::new(filename, &buf)
-                .map_err(|e| FileError::SystemTimeError(e))?;
 
-        let file = Self {
+        // Generate a file id and get the time
+        let (file_id, hash_date) = FileID::new(filename, &buf)
+            .map_err(|e| FileError::SystemTimeError(e))?;
+
+        // Construct the file
+        let mut base_file = Self {
             filename: filename.to_string(),
             id: file_id,
             creation_date: hash_date,
-
+            checksum: {
+                let mut hasher = Hasher::new();
+                hasher.update(&buf);
+                hasher.finalize()
+            },
+            shard_config: None,
         };
 
-        Ok(file)
+        let mut shards: Option<Vec<Shard>> = None;
+
+        // Shard if there are sharding options
+        if let Some(options) = sharding_options {
+            let (new_shards, config) = Shard::shard(buf, options)
+                .map_err(|e| FileError::ShardError(e))?;
+            base_file.shard_config = Some(config);
+            shards = Some(new_shards);
+        }
+
+        Ok((base_file, shards))
     }
-    
-    pub fn new_shard
 }
 
 impl PartialEq for File {
@@ -151,20 +174,20 @@ mod tests {
 
     #[test]
     fn test_new_file() {
-        File::new(Path::new("testfile.txt")).unwrap();
+        File::new(Path::new("testfile.txt"), None).unwrap();
     }
 
     #[test]
     fn test_to_bytes() {
-        let file = File::new(Path::new("testfile.txt")).unwrap();
-        let bytes = file.to_bytes().unwrap();
+        let file = File::new(Path::new("testfile.txt"), None).unwrap();
+        let bytes = file.0.to_bytes().unwrap();
         println!("bytes: {:?}", bytes);
     }
 
     #[test]
     fn test_from_bytes() {
-        let file = File::new(Path::new("testfile.txt")).unwrap();
-        let serialized = file.to_bytes().unwrap();
+        let file = File::new(Path::new("testfile.txt"), None).unwrap();
+        let serialized = file.0.to_bytes().unwrap();
 
         let deserialized = File::from_bytes(serialized).unwrap();
         println!("deserialized file: {:?}", deserialized);
