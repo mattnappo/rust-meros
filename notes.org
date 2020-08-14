@@ -1,0 +1,39 @@
+#+TITLE: Some notes before I forget
+
+* Things to do
+
+* Things to think about
+
+
+* The DHT
+Basically, there is this big Kademlia distributed hash table. The keys for this hash table are FileIDs and the values are a type called `File`. This file contains the following data:
+** A filename
+** A file ID (just to be safe and for the user's convenience)
+** The date of creation of the file
+** A checksum of the bytes of the file for validation purposes
+** The config representing how the data was sharded, which is helpful when reconstructing ("de-sharding")
+** And finally, a digital signature to make sure that the file was (a) not tampered with, and (b) to prove that the file really was from the right user.
+** Finally, and possibly most importantly, the vector of locations.
+*** This vector has shard_config.shard_count items in it. Each item in the vector provides a way to contact the node that holds that shard. This method of contact is a multiaddr at its core. The vec is basically just Vec<Multiaddr>.
+
+* The semantics
+1. Create a primitives::File with sharding. This is going to read the file from the disk, shard it appropriately, and generate that Vec<Multiaddr> all in one method. It will return a File with blank Vec<mutliaddr> (with the correct size, though), and the actual sharded data (a Vec<Shard>).
+2. Take those shards and the file's Vec<Multiaddr> and distribute those shards over the file.shard_config.n nodes on the network.
+
+* Shortcomings
+1. How do we keep the addresses in the main DHT's records up to date? For example, let's say that a file is stored in the network's main DHT. It is very possible that one of the nodes storing shard information for that file could change it's ip address or listening port, which would change that peer's multiaddress. This means that the multiaddress for that node in the Vec<Multiaddr> of the File stored in the DHT will become out of sync. A possible solution: every node keeps a list of the FileID's that point to that node. Then, right when the node joins the network it makes sure that all of the `File`s in the DHT at those FileIDs are all up to date.
+
+* TODO for PUT operations
+** Write the code in File::new to generate that Vec<multiaddr>. They can start off all being null for now.
+** Write the code to figure out which nodes are going to get a shard to store
+
+* TODO for GET operations
+** Write the code to:
+1. Lookup the FileID in the DHT
+2. Extract the node locations
+3. Poll all of those nodes for the necessary shards
+4. Put everything back together and validate
+
+* Other important things to do:
+** File validation (checksum, shard order, digital signature)
+** File signing (digital signatures)
