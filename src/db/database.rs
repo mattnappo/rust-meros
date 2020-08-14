@@ -54,8 +54,9 @@ mod tests {
     #[test]
     fn test_insert() {
         let mut db = Database::<FileID, File>::new("test_db").unwrap();
-        let file = &File::new(Path::new("./testfile.txt"), None).unwrap();
+        let (file, _) =
+            &File::new(Path::new("./testfile.txt"), None).unwrap();
 
-        db.insert(&file.0.id, &file.0).unwrap();
+        db.insert(&file.id, &file).unwrap();
     }
 }
