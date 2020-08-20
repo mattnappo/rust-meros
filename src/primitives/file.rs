@@ -2,6 +2,7 @@ use crc32fast::Hasher;
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::PartialEq,
+    collections::HashMap,
     fs,
     io::prelude::*,
     path,
@@ -12,6 +13,7 @@ use super::shard::{Shard, ShardConfig, ShardError, ShardingOptions};
 use crate::{
     crypto::hash,
     db::{IsKey, IsValue},
+    net::NodeIdentity,
     CanSerialize,
 };
 
@@ -72,16 +74,18 @@ pub enum FileError {
 /// The structure representing a file on the meros network. This structure
 /// contains valuable information about a file, but does not contain the data
 /// of the file. Rather, that is stored amongst the nodes described in the
-/// `shard_db` field.
+/// `shards` field.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct File {
     pub filename: String,
     pub id: FileID,
     pub creation_date: u128,
-    // locations: Option<database::Database<NodeInfo>>,
     checksum: u32, // A checksum of just the bytes of the file
-    shard_config: Option<ShardConfig>,
     // signature: DigitalSignature, // mock type, tbi TODO (to be implemented)
+    shard_config: Option<ShardConfig>,
+
+    // The locations of  the shards on the network
+    shards: Option<HashMap<ShardID, NodeIdentity>>,
 }
 
 impl File {
