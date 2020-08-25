@@ -82,7 +82,7 @@ impl NetworkBehaviourEventProcess<KademliaEvent> for MerosBehavior {
 }
 /// Initialize a node.
 /// TODO: This should take a public key and a port to listen on as a parameter.
-pub fn init_node() -> Box<dyn Error> {
+pub fn init_node() -> Result<(), Box<dyn Error>> {
     // Generate an identity
     let local_key = identity::Keypair::generate_ed25519();
     let local_peer_id = PeerId::from(local_key.public());
@@ -96,7 +96,7 @@ pub fn init_node() -> Box<dyn Error> {
         };
 
         let mdns = Mdns::new()?;
-        let mehavior = MerosBehavior { kademlia, mdns };
+        let behavior = MerosBehavior { kademlia, mdns };
 
         Swarm::new(transport, behavior, local_peer_id)
     };
