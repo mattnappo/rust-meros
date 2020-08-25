@@ -3,6 +3,7 @@ use std::fmt;
 pub mod core;
 pub mod crypto;
 pub mod db;
+pub mod net;
 pub mod primitives;
 
 #[derive(Debug)]

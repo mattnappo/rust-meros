@@ -1,7 +1,7 @@
 use blake3;
 
 /// The default size of hashes
-const HASH_SIZE: usize = 32;
+pub const HASH_SIZE: usize = 32;
 
 /// A type alias for Hashes to be used in the `primitives` module.
 pub type Hash = [u8; HASH_SIZE];

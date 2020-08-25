@@ -1,6 +1,5 @@
 use crate::{
-    core::Compressable,
-    crypto::{encryption, hash, CryptoError},
+    crypto::{encryption, hash, hash::HASH_SIZE, CryptoError},
     db::{IsKey, IsValue},
     CanSerialize, GeneralError,
 };
@@ -9,7 +8,9 @@ use math::round::floor;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::{
+    clone::Clone,
     cmp::PartialEq,
+    hash::Hash,
     time::{SystemTime, SystemTimeError, UNIX_EPOCH},
 };
 
@@ -26,7 +27,7 @@ pub enum ShardError {
 
 /// The structure used for the identification of a shard on the meros
 /// network.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Hash)]
 pub struct ShardID {
     id: hash::Hash,
 }
@@ -49,11 +50,25 @@ impl ShardID {
     }
 }
 
+impl Clone for ShardID {
+    fn clone(&self) -> Self {
+        let mut v = [0u8; HASH_SIZE];
+
+        for i in 0..HASH_SIZE {
+            v[i] = self.id[i];
+        }
+
+        Self { id: v }
+    }
+}
+
 impl PartialEq for ShardID {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
+
+impl Eq for ShardID {}
 
 impl IsKey for ShardID {}
 impl CanSerialize for ShardID {
@@ -69,15 +84,34 @@ impl CanSerialize for ShardID {
 /// A structure used to configure how a vector of bytes is
 /// to be sharded.
 pub struct ShardingOptions {
-    shard_count: usize, // The amount of shards (data partitions)
-    public_key: Option<PublicKey>, // The encryption key (for sharding)
-    private_key: Option<SecretKey>, // The decryption key (for reconstructing)
-                                    // compress: bool,
+    pub(crate) shard_count: usize, // The amount of shards (data partitions)
+    pub(crate) public_key: Option<PublicKey>, // The encryption key (for sharding)
+    pub(crate) private_key: Option<SecretKey>, // The decryption key (for reconstructing)
+    pub(crate) compress: bool,
+}
+
+/// A structure used to identify how sharded bytes were sharded.
+/// This exists mainly for validation purposes.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ShardConfig {
+    encryption: bool,
+    compression: bool,
+    sizes: Vec<usize>,
+}
+
+impl CanSerialize for ShardConfig {
+    type S = Self;
+    fn to_bytes(&self) -> bincode::Result<Vec<u8>> {
+        bincode::serialize(self)
+    }
+    fn from_bytes(bytes: Vec<u8>) -> bincode::Result<Self> {
+        bincode::deserialize(&bytes[..])
+    }
 }
 
 /// The structure representing a `Shard` to be stored in a node's
 /// local shard database.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Hash)]
 pub struct Shard {
     pub data: Vec<u8>, // The actual data of the shard
     size: usize,       // The size of the data in the shard
@@ -119,7 +153,7 @@ impl Shard {
     pub fn shard(
         bytes: Vec<u8>,
         options: ShardingOptions,
-    ) -> Result<Vec<Shard>, ShardError> {
+    ) -> Result<(Vec<Shard>, ShardConfig), ShardError> {
         // Encrypt the bytes
         let mut b = bytes;
         if let Some(key) = options.public_key {
@@ -129,7 +163,14 @@ impl Shard {
 
         // Shard the (possibly encrypted) bytes and return
         let sizes = calculate_shard_sizes(b.len(), options.shard_count)?;
-        split_bytes(&b, &sizes)
+        Ok((
+            split_bytes(&b, &sizes)?,
+            ShardConfig {
+                encryption: options.public_key.is_none(),
+                compression: options.compress,
+                sizes,
+            },
+        ))
     }
 
     /// The inverse operation of `shard`. Extracts and reconstructs the bytes
@@ -319,7 +360,7 @@ mod tests {
         let t1 = calculate_shard_sizes(10, 3).unwrap();
         let t2 = calculate_shard_sizes(12312238, 27).unwrap();
         let t3 = calculate_shard_sizes(0xFF * 2, 19).unwrap();
-        println!("t1: {:?}\nt2: {:?}", t1, t2);
+        println!("t1: {:?}\nt2: {:?}\nt3: {:?}", t1, t2, t3);
     }
 
     fn test_shard_case(my_bytes: Vec<u8>, n_shards: usize) {
@@ -329,13 +370,14 @@ mod tests {
                 shard_count: n_shards,
                 public_key: None,
                 private_key: None,
+                compress: false,
             },
         )
         .unwrap();
 
         // Piece the data from the shards back together
         let mut data: Vec<u8> = Vec::new();
-        for shard in shards.iter() {
+        for shard in shards.0.iter() {
             for byte in shard.data.iter() {
                 data.push(*byte);
             }
@@ -356,10 +398,10 @@ mod tests {
 
         // Do some more automated testing
         let mut rng = rand::thread_rng();
-        for i in 0..10 {
+        for _i in 0..10 {
             // Generate a lot of bytes
             let mut b: Vec<u8> = Vec::new();
-            for i in 0..rng.gen_range(1, 100_000) {
+            for _i in 0..rng.gen_range(1, 100_000) {
                 b.push(rng.gen_range(0, 0xFF) as u8);
             }
             let len = b.len();
@@ -376,12 +418,13 @@ mod tests {
 
         let shard_count = 6;
 
-        let shards = Shard::shard(
+        let (shards, _) = Shard::shard(
             b.clone(),
             ShardingOptions {
                 shard_count,
                 public_key: None,
                 private_key: None,
+                compress: false,
             },
         )
         .unwrap();
@@ -392,6 +435,7 @@ mod tests {
                 shard_count,
                 public_key: None,
                 private_key: None,
+                compress: false,
             },
         )
         .unwrap();
@@ -420,25 +464,27 @@ mod tests {
         let sc = 11; // Whatever (shard count)
 
         // Shard with encryption
-        let shards = Shard::shard(
+        let (shards, _) = Shard::shard(
             b.clone(),
             ShardingOptions {
                 shard_count: sc,
                 // public_key: None,
                 public_key: Some(pub_key),
                 private_key: None,
+                compress: false,
             },
         )
         .unwrap();
 
         // Reconstruct
         let reconstructed_b = Shard::reconstruct(
-            &shards,
+            &shards, // The shards themselves
             ShardingOptions {
                 shard_count: sc,
                 public_key: None,
                 // private_key: None,
                 private_key: Some(priv_key),
+                compress: false,
             },
         )
         .unwrap();
