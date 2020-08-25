@@ -1,5 +1,5 @@
 use crate::{
-    crypto::{encryption, hash, CryptoError},
+    crypto::{encryption, hash, hash::HASH_SIZE, CryptoError},
     db::{IsKey, IsValue},
     CanSerialize, GeneralError,
 };
@@ -8,7 +8,9 @@ use math::round::floor;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::{
+    clone::Clone,
     cmp::PartialEq,
+    hash::Hash,
     time::{SystemTime, SystemTimeError, UNIX_EPOCH},
 };
 
@@ -25,7 +27,7 @@ pub enum ShardError {
 
 /// The structure used for the identification of a shard on the meros
 /// network.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Hash)]
 pub struct ShardID {
     id: hash::Hash,
 }
@@ -48,11 +50,25 @@ impl ShardID {
     }
 }
 
+impl Clone for ShardID {
+    fn clone(&self) -> Self {
+        let mut v = [0u8; HASH_SIZE];
+
+        for i in 0..HASH_SIZE {
+            v[i] = self.id[i];
+        }
+
+        Self { id: v }
+    }
+}
+
 impl PartialEq for ShardID {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
+
+impl Eq for ShardID {}
 
 impl IsKey for ShardID {}
 impl CanSerialize for ShardID {
@@ -95,7 +111,7 @@ impl CanSerialize for ShardConfig {
 
 /// The structure representing a `Shard` to be stored in a node's
 /// local shard database.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Hash)]
 pub struct Shard {
     pub data: Vec<u8>, // The actual data of the shard
     size: usize,       // The size of the data in the shard

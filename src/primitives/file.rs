@@ -4,22 +4,23 @@ use std::{
     cmp::PartialEq,
     collections::HashMap,
     fs,
+    hash::Hash,
     io::prelude::*,
     path,
     time::{SystemTime, SystemTimeError, UNIX_EPOCH},
 };
 
-use super::shard::{Shard, ShardConfig, ShardError, ShardingOptions};
+use super::super::net::NodeIdentity;
+use super::shard::*;
 use crate::{
     crypto::hash,
     db::{IsKey, IsValue},
-    net::NodeIdentity,
     CanSerialize,
 };
 
 /// The structure used for the identification of a file on the meros
 /// network.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Hash)]
 pub struct FileID {
     id: hash::Hash,
 }
@@ -85,7 +86,7 @@ pub struct File {
     shard_config: Option<ShardConfig>,
 
     // The locations of  the shards on the network
-    shards: Option<HashMap<ShardID, NodeIdentity>>,
+    shards: Option<HashMap<ShardID, Option<NodeIdentity>>>,
 }
 
 impl File {
@@ -131,6 +132,7 @@ impl File {
                 hasher.finalize()
             },
             shard_config: None,
+            shards: None,
         };
 
         let mut shards: Option<Vec<Shard>> = None;
@@ -140,7 +142,15 @@ impl File {
             let (new_shards, config) = Shard::shard(buf, options)
                 .map_err(|e| FileError::ShardError(e))?;
             base_file.shard_config = Some(config);
-            shards = Some(new_shards);
+
+            // Init the shard data into the database
+            let mut internal_shards = HashMap::new(); // The shard data stored in the dht
+            (0..new_shards.len()).map(|i| {
+                internal_shards.insert(new_shards[i].id.clone(), None)
+            });
+            base_file.shards = Some(internal_shards); // For the struct
+
+            shards = Some(new_shards); // For returning
         }
 
         Ok((base_file, shards))

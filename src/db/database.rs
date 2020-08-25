@@ -38,7 +38,8 @@ impl<K: IsKey, V: IsValue> Database<K, V> {
         Ok(())
     }
 
-    /// Fetch a record from the database.
+    // /// Fetch a record from the database.
+    /*
     fn fetch(&self, k: &K) -> Result<Option<V>, DatabaseError> {
         let get = self.database
             .get(k.to_bytes().map_err(|e| DatabaseError::Serialize(e))?)
@@ -48,6 +49,7 @@ impl<K: IsKey, V: IsValue> Database<K, V> {
             Some()
         }
     }
+    */
 }
 
 #[cfg(test)]
