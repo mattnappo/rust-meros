@@ -29,6 +29,7 @@ impl<K: IsKey, V: IsValue> Database<K, V> {
 
     /// Insert a record into the database.
     fn put(&mut self, k: &K, v: &V) -> Result<(), DatabaseError> {
+        // TODO: Fix error handling here
         self.database
             .insert(
                 k.to_bytes().map_err(|e| DatabaseError::Serialize(e))?,
@@ -59,11 +60,11 @@ mod tests {
     use std::path::Path;
 
     #[test]
-    fn test_insert() {
+    fn test_put() {
         let mut db = Database::<FileID, File>::new("test_db").unwrap();
         let (file, _) =
             &File::new(Path::new("./testfile.txt"), None).unwrap();
 
-        db.insert(&file.id, &file).unwrap();
+        db.put(&file.id, &file).unwrap();
     }
 }

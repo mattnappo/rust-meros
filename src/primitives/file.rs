@@ -78,15 +78,16 @@ pub enum FileError {
 /// `shards` field.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct File {
+    // Not everything needs to be public TODO
     pub filename: String,
     pub id: FileID,
     pub creation_date: u128,
-    checksum: u32, // A checksum of just the bytes of the file
+    pub checksum: u32, // A checksum of just the bytes of the file
     // signature: DigitalSignature, // mock type, tbi TODO (to be implemented)
-    shard_config: Option<ShardConfig>,
+    pub shard_config: Option<ShardConfig>,
 
     // The locations of  the shards on the network
-    shards: Option<HashMap<ShardID, Option<NodeIdentity>>>,
+    pub shards: Option<HashMap<ShardID, Option<NodeIdentity>>>,
 }
 
 impl File {
@@ -145,9 +146,9 @@ impl File {
 
             // Init the shard data into the database
             let mut internal_shards = HashMap::new(); // The shard data stored in the dht
-            (0..new_shards.len()).map(|i| {
-                internal_shards.insert(new_shards[i].id.clone(), None)
-            });
+            for i in 0..new_shards.len() {
+                internal_shards.insert(new_shards[i].id.clone(), None);
+            }
             base_file.shards = Some(internal_shards); // For the struct
 
             shards = Some(new_shards); // For returning
@@ -184,11 +185,41 @@ impl CanSerialize for File {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::crypto::encryption;
     use std::path::Path;
 
     #[test]
     fn test_new_file() {
         File::new(Path::new("testfile.txt"), None).unwrap();
+    }
+
+    #[test]
+    fn test_new_file_with_sharding() {
+        let (_, public) =
+            encryption::gen_keypair("testkey", false).unwrap();
+
+        let (file, shards) = File::new(
+            Path::new("testfile.txt"),
+            Some(ShardingOptions {
+                shard_count: 10,
+                public_key: Some(public),
+                private_key: None,
+                compress: false,
+            }),
+        )
+        .unwrap();
+
+        let shards = shards.unwrap();
+        let internal_shards = file.shards.unwrap();
+
+        println!("Map of internal shards: {:?}", internal_shards);
+        println!("the shards: {:?}", shards);
+        for i in 0..shards.len() {
+            match internal_shards.get(&shards[i].id) {
+                Some(k) => continue,
+                None => panic!("broken"),
+            }
+        }
     }
 
     #[test]

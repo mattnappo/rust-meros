@@ -84,10 +84,10 @@ impl CanSerialize for ShardID {
 /// A structure used to configure how a vector of bytes is
 /// to be sharded.
 pub struct ShardingOptions {
-    shard_count: usize, // The amount of shards (data partitions)
-    public_key: Option<PublicKey>, // The encryption key (for sharding)
-    private_key: Option<SecretKey>, // The decryption key (for reconstructing)
-    compress: bool,
+    pub(crate) shard_count: usize, // The amount of shards (data partitions)
+    pub(crate) public_key: Option<PublicKey>, // The encryption key (for sharding)
+    pub(crate) private_key: Option<SecretKey>, // The decryption key (for reconstructing)
+    pub(crate) compress: bool,
 }
 
 /// A structure used to identify how sharded bytes were sharded.
