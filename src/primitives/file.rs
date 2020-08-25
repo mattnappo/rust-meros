@@ -217,7 +217,9 @@ mod tests {
         for i in 0..shards.len() {
             match internal_shards.get(&shards[i].id) {
                 Some(k) => continue,
-                None => panic!("broken"),
+                None => panic!(
+                    "shards are out of order or incorrectly constructed"
+                ),
             }
         }
     }

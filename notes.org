@@ -38,3 +38,10 @@ Basically, there is this big Kademlia distributed hash table. The keys for this 
 * Other important things to do:
 ** File validation (checksum, shard order, digital signature)
 ** File signing (digital signatures)
+
+
+* Basic networking idea
+** Something like: Get `n_shard` nearest neighbors. Then set file.shards.nodeidentity.multiaddr, and upload to dht.
+** Then backend node code
+** Connect it all together
+
