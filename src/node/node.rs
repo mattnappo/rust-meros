@@ -128,36 +128,45 @@ impl Node {
         }))
     }
 
-    /// Initialize a node.
-    // TODO: This should take a public key and a port to listen on as a parameter.
-    pub fn init_node() -> Result<(), Box<dyn Error>> {
-        // Generate an identity
-        let local_key = identity::Keypair::generate_ed25519();
-        let local_peer_id = PeerId::from(local_key.public());
-
-        let transport = build_development_transport(local_key)?;
-        //libp2p::build_tcp_ws_secio_mplex_yamux(self.keypair.clone())?;
+    /// Start listening on a node
+    pub fn start_listening(&mut self, port: u16) -> Result<(), Box<dyn Error>> {
+        // Build the swarm
+        let transport =
+            libp2p::build_tcp_ws_secio_mplex_yamux(self.keypair.clone())?;
 
         let mut swarm = {
             let kademlia = {
-                let store = MemoryStore::new(local_peer_id.clone());
-                Kademlia::new(local_peer_id.clone(), store)
+                let store = MemoryStore::new(self.peer_id.clone());
+                Kademlia::new(self.peer_id.clone(), store)
             };
 
             let mdns = Mdns::new()?;
             let behavior = MerosBehavior { kademlia, mdns };
 
-            Swarm::new(transport, behavior, local_peer_id)
+            Swarm::new(transport, behavior, self.peer_id.clone())
         };
 
         // Start listening on this node
-        Swarm::listen_on(&mut swarm, "/ip4/0.0.0.0/tcp/0".parse()?)?;
+        Swarm::listen_on(
+            &mut swarm,
+            format!("/ip4/0.0.0.0/tcp/{}", port).parse()?,
+        )?;
 
         // Construct the future for handling lines from stdin
         let mut listening = false;
         let mut stdin = io::BufReader::new(io::stdin()).lines();
         task::block_on(future::poll_fn(move |cx: &mut Context<'_>| {
             // Poll stdin
+            loop {
+                match stdin.try_poll_next_unpin(cx)? {
+                    Poll::Ready(Some(line)) => {
+                        handler::handle_stdin_line(&mut swarm.kademlia, line)
+                    }
+
+                    Poll::Ready(None) => panic!("stdin closed (errored)"),
+                    Poll::Pending => break,
+                }
+            }
             loop {
                 /*
                     if self.pending_ops.len() > 0
@@ -166,7 +175,9 @@ impl Node {
 
                 // Poll the swarm for an event
                 match swarm.poll_next_unpin(cx) {
-                    Poll::Ready(Some(event)) => println!("swarm event: {:?}", event),
+                    Poll::Ready(Some(event)) => {
+                        println!("swarm event: {:?}", event)
+                    }
                     Poll::Ready(None) => return Poll::Ready(Ok(())),
                     Poll::Pending => {
                         if !listening {
@@ -175,6 +186,7 @@ impl Node {
                                 listening = true;
                             }
                         }
+                        break;
                     }
                 }
             }
