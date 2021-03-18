@@ -1,12 +1,9 @@
 use std::fmt;
 
-pub mod common {
-    pub const DATADIR: &str = "./data/";
-}
+pub mod common;
 pub mod core;
 pub mod crypto;
 pub mod db;
-pub mod net;
 pub mod node;
 pub mod primitives;
 

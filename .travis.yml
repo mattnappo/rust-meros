@@ -14,5 +14,6 @@ jobs:
 script:
   - cargo build --verbose --all --release
   - cargo test --verbose --all -- --nocapture
+    #  - cargo run a 3000
 notification:
   - email: false

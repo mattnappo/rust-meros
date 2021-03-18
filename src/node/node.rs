@@ -20,10 +20,12 @@ use std::{
     task::{Context, Poll},
 };
 
-use super::super::common;
-use super::super::crypto;
-use super::super::GeneralError;
-use super::handler;
+use super::super::{
+    common,
+    common::Stack,
+    primitives::{file, shard},
+    GeneralError,
+};
 
 /// The main network behavior for the Meros protocol.
 #[derive(NetworkBehaviour)]
@@ -86,11 +88,68 @@ impl NetworkBehaviourEventProcess<KademliaEvent> for MerosBehavior {
     }
 }
 
+/// Parameters for a client operation on the network.
+struct OperationConfig {
+    /// Output location for a get file request on the disk
+    pub output_file: String,
+
+    /// Minimum number of nodes that the operation must contact to be valid.
+    pub min_nodes: u16,
+
+    /// Should the output be automatically decompressed.
+    pub decompress: bool,
+
+    /// Should the output be automatically decrypted.
+    pub decrypt: bool,
+}
+
+/// An operation that a node/client on the network can perform. This enum will
+/// grow as features on the network grow.
+enum Operation {
+    /// Store a file on the network. Also sends the shards to all other nodes.
+    PutFile {
+        file_metadata: file::File,
+        file_bytes: Vec<u8>,
+        config: OperationConfig,
+    },
+
+    /// Poll all the necessary nodes to get a file from the network.
+    GetFile {
+        file: file::FileID,
+        config: OperationConfig,
+    },
+}
+
+/// Nodes can have different functions. This enum differentiates between
+/// different kinds of node behaviors.
+enum NodeType {
+    /// Is not a real node, only sends requests to the network. Does not
+    /// host any shards.
+    Client {
+        /// The node's list of pending operations.
+        pending_operations: Stack<Operation>,
+
+        /// The results of previous operations.
+        results: Vec<OpResult>,
+    },
+
+    /// A node that only exists to broadcast and store shrads. It cannot
+    /// make requests on the network.
+    Node { trust: u32 },
+}
+
 /// A node on the Meros network. A Node can make requests to the network to
 /// get, put, update, and delete files.
 pub struct Node {
+    /// The node's libp2p ed25519 keypair
     keypair: identity::Keypair,
+
+    /// The node's libp2p PeerId (hash of the pubk)
     peer_id: PeerId,
+
+    /// The type of node that this node is, and other node type-specific
+    /// information.
+    node_type: NodeType,
 }
 
 impl Node {
@@ -154,24 +213,24 @@ impl Node {
 
         // Construct the future for handling lines from stdin
         let mut listening = false;
-        let mut stdin = io::BufReader::new(io::stdin()).lines();
-        task::block_on(future::poll_fn(move |cx: &mut Context<'_>| {
-            // Poll stdin
+        let fut = future::poll_fn(move |cx: &mut Context<'_>| {
             loop {
-                match stdin.try_poll_next_unpin(cx)? {
-                    Poll::Ready(Some(line)) => {
-                        handler::handle_stdin_line(&mut swarm.kademlia, line)
+                match self.node_type {
+                    // Execute all the pending operations
+                    Client(ops) => {
+                        for op in ops {
+                            match op {
+                                PutFile(file, shards) => {
+                                    self.put_file(file, shards)
+                                }
+                                GetFile(file_id) => self.get_file(file, shards),
+                            }
+                        }
                     }
 
-                    Poll::Ready(None) => panic!("stdin closed (errored)"),
-                    Poll::Pending => break,
+                    // Do node stuff (what does the node need to do?)
+                    Node(_) => {}
                 }
-            }
-            loop {
-                /*
-                    if self.pending_ops.len() > 0
-                    then get/push each file.
-                */
 
                 // Poll the swarm for an event
                 match swarm.poll_next_unpin(cx) {
@@ -191,6 +250,11 @@ impl Node {
                 }
             }
             Poll::Pending
-        }))
+        });
+
+        task::block_on(fut)
     }
+
+    fn get_file(&self);
+    fn put_file(&self);
 }

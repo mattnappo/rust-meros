@@ -30,13 +30,11 @@ impl FileID {
         filename: &str,
         bytes: &Vec<u8>,
     ) -> Result<(Self, u128), SystemTimeError> {
-        let time = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs()
-            as u128;
+        let time = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as u128;
 
-        let data =
-            [filename.as_bytes(), &bytes[..], time.to_string().as_bytes()]
-                .concat()
-                .to_vec();
+        let data = [filename.as_bytes(), &bytes[..], time.to_string().as_bytes()]
+            .concat()
+            .to_vec();
         Ok((
             Self {
                 id: hash::hash_bytes(data),
@@ -74,7 +72,7 @@ pub enum FileError {
 
 /// The structure representing a file on the meros network. This structure
 /// contains valuable information about a file, but does not contain the data
-/// of the file. Rather, that is stored amongst the nodes described in the
+/// of the file. Rather, that is stored among the nodes described in the
 /// `shards` field.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct File {
@@ -107,8 +105,7 @@ impl File {
         // Get the name of the file (clean this up somehow TODO)
         let invalid_path =
             Err(FileError::InvalidFilepath(crate::GeneralError::new(
-                format!("{} is an invalid filepath", path.display())
-                    .as_str(),
+                format!("{} is an invalid filepath", path.display()).as_str(),
             )));
         let filename = match path.file_name() {
             Some(name) => match name.to_str() {
@@ -195,8 +192,7 @@ mod tests {
 
     #[test]
     fn test_new_file_with_sharding() {
-        let (_, public) =
-            encryption::gen_keypair("testkey", false).unwrap();
+        let (_, public) = encryption::gen_keypair("testkey", false).unwrap();
 
         let (file, shards) = File::new(
             Path::new("testfile.txt"),
@@ -217,9 +213,9 @@ mod tests {
         for i in 0..shards.len() {
             match internal_shards.get(&shards[i].id) {
                 Some(k) => continue,
-                None => panic!(
-                    "shards are out of order or incorrectly constructed"
-                ),
+                None => {
+                    panic!("shards are out of order or incorrectly constructed")
+                }
             }
         }
     }
