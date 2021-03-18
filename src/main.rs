@@ -1,4 +1,4 @@
-use rust_meros::node::node;
+use rust_meros::node::node::Node;
 fn main() {
-    node::init_node().unwrap();
+    Node::init_node().unwrap();
 }

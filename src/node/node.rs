@@ -13,10 +13,16 @@ use async_std::{io, task};
 use futures::prelude::*;
 use std::{
     error::Error,
+    fs,
+    io::{Read, Write},
+    path::Path,
     str::from_utf8,
     task::{Context, Poll},
 };
 
+use super::super::common;
+use super::super::crypto;
+use super::super::GeneralError;
 use super::handler;
 
 /// The main network behavior for the Meros protocol.
@@ -48,8 +54,7 @@ impl NetworkBehaviourEventProcess<KademliaEvent> for MerosBehavior {
                         for query in ok.records {
                             println!(
                                 "got record {:?} {:?}",
-                                from_utf8(query.record.key.as_ref())
-                                    .unwrap(),
+                                from_utf8(query.record.key.as_ref()).unwrap(),
                                 from_utf8(&query.record.value).unwrap()
                             );
                         }
@@ -80,68 +85,100 @@ impl NetworkBehaviourEventProcess<KademliaEvent> for MerosBehavior {
         }
     }
 }
-/// Initialize a node.
-/// TODO: This should take a public key and a port to listen on as a parameter.
-pub fn init_node() -> Result<(), Box<dyn Error>> {
-    // Generate an identity
-    let local_key = identity::Keypair::generate_ed25519();
-    let local_peer_id = PeerId::from(local_key.public());
 
-    let transport = build_development_transport(local_key)?;
+/// A node on the Meros network. A Node can make requests to the network to
+/// get, put, update, and delete files.
+pub struct Node {
+    keypair: identity::Keypair,
+    peer_id: PeerId,
+}
 
-    let mut swarm = {
-        let kademlia = {
-            let store = MemoryStore::new(local_peer_id.clone());
-            Kademlia::new(local_peer_id.clone(), store)
-        };
+impl Node {
+    /// Initialize a new node.
+    /// # Arguments
+    /// * `name` - The local name of the node on the disk.
+    pub fn new(name: &str) -> Result<Self, Box<dyn Error>> {
+        let path = Path::new(common::DATADIR).join("identities").join(name);
 
-        let mdns = Mdns::new()?;
-        let behavior = MerosBehavior { kademlia, mdns };
-
-        Swarm::new(transport, behavior, local_peer_id)
-    };
-
-    // Start listening on this node
-    Swarm::listen_on(&mut swarm, "/ip4/0.0.0.0/tcp/0".parse()?)?;
-
-    // Construct the future for handling lines from stdin
-    let mut printed_listen = false;
-    let mut stdin = io::BufReader::new(io::stdin()).lines();
-    let handler_future = future::poll_fn(move |cx: &mut Context<'_>| {
-        // Poll stdin
-        loop {
-            match stdin.try_poll_next_unpin(cx)? {
-                Poll::Ready(Some(line)) => {
-                    handler::handle_stdin_line(&mut swarm.kademlia, line)
-                }
-
-                Poll::Ready(None) => panic!("stdin closed (errored)"),
-                Poll::Pending => break,
-            }
+        // If the identity already exists, load it from disk
+        if path.exists() {
+            let keypair =
+                identity::Keypair::Ed25519(identity::ed25519::Keypair::decode(
+                    &mut fs::read(path.join("keypair"))?,
+                )?);
+            return Ok(Node {
+                peer_id: PeerId::from_public_key(keypair.public()),
+                keypair: keypair,
+            });
         }
 
-        // Poll the swarm for an event
-        match swarm.poll_next_unpin(cx) {
-            Poll::Ready(Some(event)) => {
-                println!("swarm event: {:?}", event)
-            }
+        // If it does not, create it and persist it to disk
+        let keypair = identity::Keypair::generate_ed25519();
+        let peer_id = PeerId::from_public_key(keypair.public());
+        fs::create_dir_all(&path)?;
+        if let identity::Keypair::Ed25519(k) = &keypair {
+            fs::File::create(&path.join("keypair"))?.write_all(&k.encode())?;
+            return Ok(Node {
+                peer_id: peer_id,
+                keypair,
+            });
+        }
+        Err(Box::new(GeneralError {
+            details: String::from("error creating new node"),
+        }))
+    }
 
-            Poll::Ready(None) => {
-                return Poll::Ready(Ok(()));
-            }
+    /// Initialize a node.
+    // TODO: This should take a public key and a port to listen on as a parameter.
+    pub fn init_node() -> Result<(), Box<dyn Error>> {
+        // Generate an identity
+        let local_key = identity::Keypair::generate_ed25519();
+        let local_peer_id = PeerId::from(local_key.public());
 
-            Poll::Pending => {
-                if !printed_listen {
-                    if let Some(addr) = Swarm::listeners(&swarm).next() {
-                        println!("listening on {:?}", addr);
-                        printed_listen = true;
+        let transport = build_development_transport(local_key)?;
+        //libp2p::build_tcp_ws_secio_mplex_yamux(self.keypair.clone())?;
+
+        let mut swarm = {
+            let kademlia = {
+                let store = MemoryStore::new(local_peer_id.clone());
+                Kademlia::new(local_peer_id.clone(), store)
+            };
+
+            let mdns = Mdns::new()?;
+            let behavior = MerosBehavior { kademlia, mdns };
+
+            Swarm::new(transport, behavior, local_peer_id)
+        };
+
+        // Start listening on this node
+        Swarm::listen_on(&mut swarm, "/ip4/0.0.0.0/tcp/0".parse()?)?;
+
+        // Construct the future for handling lines from stdin
+        let mut listening = false;
+        let mut stdin = io::BufReader::new(io::stdin()).lines();
+        task::block_on(future::poll_fn(move |cx: &mut Context<'_>| {
+            // Poll stdin
+            loop {
+                /*
+                    if self.pending_ops.len() > 0
+                    then get/push each file.
+                */
+
+                // Poll the swarm for an event
+                match swarm.poll_next_unpin(cx) {
+                    Poll::Ready(Some(event)) => println!("swarm event: {:?}", event),
+                    Poll::Ready(None) => return Poll::Ready(Ok(())),
+                    Poll::Pending => {
+                        if !listening {
+                            if let Some(addr) = Swarm::listeners(&swarm).next() {
+                                println!("listening on {:?}", addr);
+                                listening = true;
+                            }
+                        }
                     }
                 }
             }
-        }
-
-        Poll::Pending
-    });
-
-    task::block_on(handler_future)
+            Poll::Pending
+        }))
+    }
 }

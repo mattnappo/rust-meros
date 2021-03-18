@@ -6,10 +6,9 @@ use libp2p::{
     },
 };
 
-pub fn handle_stdin_line(
-    kademlia: &mut Kademlia<MemoryStore>,
-    line: String,
-) {
+// This is what drives the client. When a client wants to publish a file, it
+// will do this (mainly the kademlia.get_record and kademlia.put_record)
+pub fn handle_stdin_line(kademlia: &mut Kademlia<MemoryStore>, line: String) {
     let mut args = line.split(" ");
     match args.next() {
         Some("GET") => {
