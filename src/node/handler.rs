@@ -1,9 +1,6 @@
-use libp2p::{
-    identity,
-    kad::{
-        record::{store::MemoryStore, Key},
-        Kademlia, Quorum, Record,
-    },
+use libp2p::kad::{
+    record::{store::MemoryStore, Key},
+    Kademlia, Quorum, Record,
 };
 
 // This is what drives the client. When a client wants to publish a file, it

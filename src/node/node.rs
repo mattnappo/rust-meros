@@ -1,31 +1,23 @@
 use libp2p::{
-    build_development_transport, identity,
-    kad::{
-        record::store::MemoryStore, Kademlia, KademliaEvent, PeerRecord,
-        PutRecordOk, QueryResult, Record,
-    },
+    identity,
+    kad::{record::store::MemoryStore, Kademlia, KademliaEvent, QueryResult},
     mdns::{Mdns, MdnsEvent},
     swarm::NetworkBehaviourEventProcess,
     NetworkBehaviour, PeerId, Swarm,
 };
 
-use async_std::{io, task};
+use async_std::task;
 use futures::prelude::*;
 use std::{
     error::Error,
     fs,
-    io::{Read, Write},
+    io::Write,
     path::Path,
     str::from_utf8,
     task::{Context, Poll},
 };
 
-use super::super::{
-    common,
-    common::Stack,
-    primitives::{file, shard},
-    GeneralError,
-};
+use super::super::{common, common::Stack, primitives::file, GeneralError};
 
 /// The main network behavior for the Meros protocol.
 #[derive(NetworkBehaviour)]
@@ -88,7 +80,18 @@ impl NetworkBehaviourEventProcess<KademliaEvent> for MerosBehavior {
     }
 }
 
+impl crate::CanSerialize for PeerId {
+    type S = Self;
+    fn to_bytes(&self) -> bincode::Result<Vec<u8>> {
+        Ok(self.into_bytes())
+    }
+    fn from_bytes(bytes: Vec<u8>) -> bincode::Result<Self> {
+        Ok(PeerId::from_bytes(bytes).unwrap())
+    }
+}
+
 /// Parameters for a client operation on the network.
+#[derive(Debug)]
 struct OperationConfig {
     /// Output location for a get file request on the disk
     pub output_file: String,
@@ -105,6 +108,7 @@ struct OperationConfig {
 
 /// An operation that a node/client on the network can perform. This enum will
 /// grow as features on the network grow.
+#[derive(Debug)]
 enum Operation {
     /// Store a file on the network. Also sends the shards to all other nodes.
     PutFile {
@@ -115,7 +119,7 @@ enum Operation {
 
     /// Poll all the necessary nodes to get a file from the network.
     GetFile {
-        file: file::FileID,
+        file_id: file::FileID,
         config: OperationConfig,
     },
 }
@@ -128,14 +132,18 @@ enum NodeType {
     Client {
         /// The node's list of pending operations.
         pending_operations: Stack<Operation>,
-
-        /// The results of previous operations.
-        results: Vec<OpResult>,
     },
 
     /// A node that only exists to broadcast and store shrads. It cannot
     /// make requests on the network.
     Node { trust: u32 },
+}
+
+impl Default for NodeType {
+    fn default() -> Self {
+        let pending_operations: Stack<Operation> = Stack::new();
+        NodeType::Client { pending_operations }
+    }
 }
 
 /// A node on the Meros network. A Node can make requests to the network to
@@ -167,7 +175,8 @@ impl Node {
                 )?);
             return Ok(Node {
                 peer_id: PeerId::from_public_key(keypair.public()),
-                keypair: keypair,
+                keypair,
+                node_type: NodeType::default(),
             });
         }
 
@@ -178,8 +187,9 @@ impl Node {
         if let identity::Keypair::Ed25519(k) = &keypair {
             fs::File::create(&path.join("keypair"))?.write_all(&k.encode())?;
             return Ok(Node {
-                peer_id: peer_id,
+                peer_id,
                 keypair,
+                node_type: NodeType::default(),
             });
         }
         Err(Box::new(GeneralError {
@@ -217,19 +227,29 @@ impl Node {
             loop {
                 match self.node_type {
                     // Execute all the pending operations
-                    Client(ops) => {
-                        for op in ops {
+                    NodeType::Client {
+                        pending_operations, ..
+                    } => {
+                        for op in pending_operations.vec().into_iter() {
                             match op {
-                                PutFile(file, shards) => {
-                                    self.put_file(file, shards)
+                                Operation::PutFile {
+                                    file_metadata,
+                                    file_bytes,
+                                    config,
+                                } => self.put_file(
+                                    file_metadata,
+                                    file_bytes,
+                                    config,
+                                ),
+                                Operation::GetFile { file_id, config } => {
+                                    self.get_file(file_id, config)
                                 }
-                                GetFile(file_id) => self.get_file(file, shards),
                             }
                         }
                     }
 
                     // Do node stuff (what does the node need to do?)
-                    Node(_) => {}
+                    NodeType::Node { .. } => {}
                 }
 
                 // Poll the swarm for an event
@@ -255,6 +275,11 @@ impl Node {
         task::block_on(fut)
     }
 
-    fn get_file(&self);
-    fn put_file(&self);
+    fn get_file(&self, file_id: file::FileID, config: OperationConfig);
+    fn put_file(
+        &self,
+        file: file::File,
+        file_bytes: Vec<u8>,
+        config: OperationConfig,
+    );
 }

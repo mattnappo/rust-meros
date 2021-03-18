@@ -39,8 +39,7 @@ impl ShardID {
             .map_err(|e| ShardError::TimestampError(e))?
             .as_secs() as u128;
 
-        let data =
-            [&data[..], time.to_string().as_bytes()].concat().to_vec();
+        let data = [&data[..], time.to_string().as_bytes()].concat().to_vec();
         Ok((
             Self {
                 id: hash::hash_bytes(data),
@@ -116,7 +115,7 @@ pub struct Shard {
     pub data: Vec<u8>, // The actual data of the shard
     size: usize,       // The size of the data in the shard
     timestamp: u128,   // The time at which the shard was created
-    index: u32, // The index of the shard in a larger vector of shards
+    index: u32,        // The index of the shard in a larger vector of shards
 
     pub id: ShardID, // A unique ID, used for identification on the network
 }
@@ -191,11 +190,9 @@ impl Shard {
                     data.push(*byte);
                 }
             } else {
-                return Err(ShardError::CannotReconstruct(
-                    GeneralError::new(
-                        "invalid shard; cannot use it to reconstruct",
-                    ),
-                ));
+                return Err(ShardError::CannotReconstruct(GeneralError::new(
+                    "invalid shard; cannot use it to reconstruct",
+                )));
             }
             counter += 1;
         }
@@ -218,11 +215,8 @@ fn split_bytes(
     // Validate the `sizes` vector
     if sizes.iter().sum::<usize>() != bytes.len() || sizes.contains(&0) {
         return Err(ShardError::InvalidSplitSizes(GeneralError::new(
-            format!(
-                "{:?} is not a valid vector of byte split sizes.",
-                sizes,
-            )
-            .as_str(),
+            format!("{:?} is not a valid vector of byte split sizes.", sizes,)
+                .as_str(),
         )));
     }
 
@@ -344,8 +338,7 @@ mod tests {
         assert_eq!(shards[4].data, vec![6u8, 7u8]);
 
         // Test 2
-        let bytes: Vec<u8> =
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 12, 9, 17, 15, 7];
+        let bytes: Vec<u8> = vec![1, 2, 3, 4, 5, 6, 7, 8, 12, 9, 17, 15, 7];
         let sizes: Vec<usize> = vec![9, 3, 1]; // 13 total
 
         let shards = split_bytes(&bytes, &sizes).unwrap();

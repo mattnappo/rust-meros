@@ -1,8 +1,6 @@
 pub mod encryption;
 pub mod hash;
 
-use std::error::Error;
-
 /// All of the errors that can be thrown by the Crypto module.
 #[derive(Debug)]
 pub enum CryptoError {

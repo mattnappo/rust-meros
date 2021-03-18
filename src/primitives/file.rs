@@ -10,7 +10,6 @@ use std::{
     time::{SystemTime, SystemTimeError, UNIX_EPOCH},
 };
 
-use super::super::net::NodeIdentity;
 use super::shard::*;
 use crate::{
     crypto::hash,
@@ -85,7 +84,8 @@ pub struct File {
     pub shard_config: Option<ShardConfig>,
 
     // The locations of  the shards on the network
-    pub shards: Option<HashMap<ShardID, Option<NodeIdentity>>>,
+    //pub shards: Option<HashMap<ShardID, Option<PeerId>>>,
+    pub shards: Option<HashMap<ShardID, Option<u32>>>, // temporary
 }
 
 impl File {
