@@ -96,9 +96,10 @@ impl crate::CanSerialize for PeerId {
 pub struct Node {
     /// The node's identity and private key on the network (keypair and peer id)
     identity: Identity,
-    // The collection of shards that this node holds.
-    // shards: ShardStore Map between fileID and a Vec of shards, but a sled db. Need to
-    // re-write the sled db code (its garbage).
+
+    /// The collection of shards that this node holds. This is a map from
+    /// fileIDs to a Vec of shards, using sled db.
+    shards: ShardStore, // Make Arc<RwLock<>>
 }
 
 impl Node {

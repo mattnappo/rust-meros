@@ -6,7 +6,7 @@ use std::error::Error;
 /// requests to the network to get or put files.
 struct Client {
     /// This client's list of pending operations.
-    pending_ops: Stack<Operation>,
+    pending_ops: Stack<Operation>, // Make Arc<RwLock<>>
 
     /// The client's identity
     identity: identity::Identity,

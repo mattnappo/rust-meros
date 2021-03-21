@@ -1,6 +1,5 @@
 use crate::{
     crypto::{encryption, hash, hash::HASH_SIZE, CryptoError},
-    db::{IsKey, IsValue},
     CanSerialize, GeneralError,
 };
 use ecies_ed25519::{PublicKey, SecretKey};
@@ -69,7 +68,6 @@ impl PartialEq for ShardID {
 
 impl Eq for ShardID {}
 
-impl IsKey for ShardID {}
 impl CanSerialize for ShardID {
     type S = Self;
     fn to_bytes(&self) -> bincode::Result<Vec<u8>> {
@@ -80,25 +78,24 @@ impl CanSerialize for ShardID {
     }
 }
 
-/// A structure used to configure how a vector of bytes is
-/// to be sharded.
-pub struct ShardingOptions {
-    pub(crate) shard_count: usize, // The amount of shards (data partitions)
-    pub(crate) public_key: Option<PublicKey>, // The encryption key (for sharding)
-    pub(crate) private_key: Option<SecretKey>, // The decryption key (for reconstructing)
-    pub(crate) compress: bool,
-}
-
-/// A structure used to identify how sharded bytes were sharded.
-/// This exists mainly for validation purposes.
+/// A structure used to configure how a vector of bytes is sharded.
 #[derive(Serialize, Deserialize, Debug)]
-pub struct ShardConfig {
-    encryption: bool,
-    compression: bool,
-    sizes: Vec<usize>,
+pub struct ShardOptions {
+    /// The number of shards.
+    pub shard_count: usize,
+
+    /// The encryption keypair (using ecies ed235519 keys).
+    /// If None, then the shards are not encrypted.
+    pub keypair: Option<(PublicKey, PrivateKey)>,
+
+    /// Whether the shard is compressed or not
+    pub compress: bool,
+
+    /// The sizes of the shards, in order
+    pub sizes: Vec<usize>,
 }
 
-impl CanSerialize for ShardConfig {
+impl CanSerialize for ShardOptions {
     type S = Self;
     fn to_bytes(&self) -> bincode::Result<Vec<u8>> {
         bincode::serialize(self)
@@ -112,12 +109,20 @@ impl CanSerialize for ShardConfig {
 /// local shard database.
 #[derive(Serialize, Deserialize, Debug, Hash)]
 pub struct Shard {
-    pub data: Vec<u8>, // The actual data of the shard
-    size: usize,       // The size of the data in the shard
-    timestamp: u128,   // The time at which the shard was created
-    index: u32,        // The index of the shard in a larger vector of shards
+    // A unique ID, used for identification on the network
+    pub id: ShardID,
 
-    pub id: ShardID, // A unique ID, used for identification on the network
+    /// The actual data of the shard
+    pub data: Vec<u8>,
+
+    // The size of the data in the shard
+    size: usize,
+
+    // The time at which the shard was created
+    timestamp: u128,
+
+    // The index of the shard in a larger vector of shards
+    index: u32,
 }
 
 impl Shard {
@@ -141,11 +146,9 @@ impl Shard {
             return false;
         }
 
-        true
+        // Then check ShardID (get timestamp from shard (probably a bad idea))
 
-        // Check checksum
-        // Check digital signature
-        // Check ShardID (get timestamp from shard (probably a bad idea))
+        true
     }
 
     /// Given some bytes, split the bytes and return a vector of `Shard`s.
@@ -291,8 +294,6 @@ impl CanSerialize for Shard {
         bincode::deserialize(&bytes[..])
     }
 }
-
-impl IsValue for Shard {}
 
 #[cfg(test)]
 mod tests {

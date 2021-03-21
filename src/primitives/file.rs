@@ -10,6 +10,8 @@ use std::{
     time::{SystemTime, SystemTimeError, UNIX_EPOCH},
 };
 
+use libp2p::PeerId;
+
 use super::shard::*;
 use crate::{
     crypto::hash,
@@ -49,7 +51,6 @@ impl PartialEq for FileID {
     }
 }
 
-impl IsKey for FileID {}
 impl CanSerialize for FileID {
     type S = Self;
     fn to_bytes(&self) -> bincode::Result<Vec<u8>> {
@@ -71,21 +72,34 @@ pub enum FileError {
 
 /// The structure representing a file on the meros network. This structure
 /// contains valuable information about a file, but does not contain the data
-/// of the file. Rather, that is stored among the nodes described in the
+/// of the file. Rather, that data is stored among the nodes described in the
 /// `shards` field.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct File {
-    // Not everything needs to be public TODO
+    /// The name of the file
     pub filename: String,
-    pub id: FileID,
-    pub creation_date: u128,
-    pub checksum: u32, // A checksum of just the bytes of the file
-    // signature: DigitalSignature, // mock type, tbi TODO (to be implemented)
-    pub shard_config: Option<ShardConfig>,
 
-    // The locations of  the shards on the network
-    //pub shards: Option<HashMap<ShardID, Option<PeerId>>>,
-    pub shards: Option<HashMap<ShardID, Option<u32>>>, // temporary
+    /// A hash of the file name, bytes, and an additional salt (timestamp)
+    pub id: FileID,
+
+    /// The date of creation
+    pub creation_date: u128,
+
+    /// A checksum of the bytes of the file
+    checksum: u32,
+
+    /// Ed25519 digital signature of the entire file struct. When calculated,
+    /// this field is all 0s.
+    signature: Vec<u8>,
+
+    /// The original owner of the file.
+    owner: PeerId,
+
+    /// The configuration of the shards.
+    pub shard_config: ShardConfig,
+
+    // The locations of the shards on the network
+    shards: Vec<PeerId>,
 }
 
 impl File {
@@ -166,8 +180,6 @@ impl super::Hashable for File {
         [0 as u8; 32] // temp
     }
 }
-
-impl IsValue for File {}
 
 impl CanSerialize for File {
     type S = Self;
