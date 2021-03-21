@@ -22,11 +22,15 @@ use super::super::{common, common::Stack, primitives::file, GeneralError};
 /// The main network behavior for the Meros protocol.
 #[derive(NetworkBehaviour)]
 struct MerosBehavior {
+    /// The main Kademlia DHT, which stores metadata to files and shards
     kademlia: Kademlia<MemoryStore>,
+
+    /// Mdns instance for peer discovery
     mdns: Mdns,
 }
 
 impl NetworkBehaviourEventProcess<MdnsEvent> for MerosBehavior {
+    /// Upon an Mdns event
     fn inject_event(&mut self, event: MdnsEvent) {
         // Add the discovered peers to the dht
         if let MdnsEvent::Discovered(discovered_peers) = event {
@@ -38,6 +42,7 @@ impl NetworkBehaviourEventProcess<MdnsEvent> for MerosBehavior {
 }
 
 impl NetworkBehaviourEventProcess<KademliaEvent> for MerosBehavior {
+    /// Upon a Kademlia event
     fn inject_event(&mut self, event: KademliaEvent) {
         match event {
             // If the event is a query
@@ -90,64 +95,8 @@ impl crate::CanSerialize for PeerId {
     }
 }
 
-/// Parameters for a client operation on the network.
-#[derive(Debug)]
-struct OperationConfig {
-    /// Output location for a get file request on the disk
-    pub output_file: String,
-
-    /// Minimum number of nodes that the operation must contact to be valid.
-    pub min_nodes: u16,
-
-    /// Should the output be automatically decompressed.
-    pub decompress: bool,
-
-    /// Should the output be automatically decrypted.
-    pub decrypt: bool,
-}
-
-/// An operation that a node/client on the network can perform. This enum will
-/// grow as features on the network grow.
-#[derive(Debug)]
-enum Operation {
-    /// Store a file on the network. Also sends the shards to all other nodes.
-    PutFile {
-        file_metadata: file::File,
-        file_bytes: Vec<u8>,
-        config: OperationConfig,
-    },
-
-    /// Poll all the necessary nodes to get a file from the network.
-    GetFile {
-        file_id: file::FileID,
-        config: OperationConfig,
-    },
-}
-
-/// Nodes can have different functions. This enum differentiates between
-/// different kinds of node behaviors.
-enum NodeType {
-    /// Is not a real node, only sends requests to the network. Does not
-    /// host any shards.
-    Client {
-        /// The node's list of pending operations.
-        pending_operations: Stack<Operation>,
-    },
-
-    /// A node that only exists to broadcast and store shrads. It cannot
-    /// make requests on the network.
-    Node { trust: u32 },
-}
-
-impl Default for NodeType {
-    fn default() -> Self {
-        let pending_operations: Stack<Operation> = Stack::new();
-        NodeType::Client { pending_operations }
-    }
-}
-
-/// A node on the Meros network. A Node can make requests to the network to
-/// get, put, update, and delete files.
+/// A node on the Meros network. A Node stores and broadcasts shards on the network
+/// to host files.
 pub struct Node {
     /// The node's libp2p ed25519 keypair
     keypair: identity::Keypair,
@@ -155,9 +104,12 @@ pub struct Node {
     /// The node's libp2p PeerId (hash of the pubk)
     peer_id: PeerId,
 
-    /// The type of node that this node is, and other node type-specific
-    /// information.
-    node_type: NodeType,
+    /// This node's trust in the network
+    trust: u32,
+
+    /// The collection of shards that this node holds.
+    // shards: ShardStore Map between fileID and a Vec of shards, but a sled db. Need to
+    // re-write the sled db code (its garbage).
 }
 
 impl Node {
@@ -189,7 +141,6 @@ impl Node {
             return Ok(Node {
                 peer_id,
                 keypair,
-                node_type: NodeType::default(),
             });
         }
         Err(Box::new(GeneralError {
@@ -225,34 +176,10 @@ impl Node {
         let mut listening = false;
         let fut = future::poll_fn(move |cx: &mut Context<'_>| {
             loop {
-                match self.node_type {
-                    // Execute all the pending operations
-                    NodeType::Client {
-                        pending_operations, ..
-                    } => {
-                        for op in pending_operations.vec().into_iter() {
-                            match op {
-                                Operation::PutFile {
-                                    file_metadata,
-                                    file_bytes,
-                                    config,
-                                } => self.put_file(
-                                    file_metadata,
-                                    file_bytes,
-                                    config,
-                                ),
-                                Operation::GetFile { file_id, config } => {
-                                    self.get_file(file_id, config)
-                                }
-                            }
-                        }
-                    }
 
-                    // Do node stuff (what does the node need to do?)
-                    NodeType::Node { .. } => {}
-                }
+                // First do node stuff (what does the node need to do?)
 
-                // Poll the swarm for an event
+                // Then poll the swarm for an event
                 match swarm.poll_next_unpin(cx) {
                     Poll::Ready(Some(event)) => {
                         println!("swarm event: {:?}", event)
@@ -274,12 +201,4 @@ impl Node {
 
         task::block_on(fut)
     }
-
-    fn get_file(&self, file_id: file::FileID, config: OperationConfig);
-    fn put_file(
-        &self,
-        file: file::File,
-        file_bytes: Vec<u8>,
-        config: OperationConfig,
-    );
 }
