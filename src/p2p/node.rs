@@ -1,5 +1,4 @@
 use libp2p::{
-    identity,
     kad::{record::store::MemoryStore, Kademlia, KademliaEvent, QueryResult},
     mdns::{Mdns, MdnsEvent},
     swarm::NetworkBehaviourEventProcess,
@@ -10,14 +9,11 @@ use async_std::task;
 use futures::prelude::*;
 use std::{
     error::Error,
-    fs,
-    io::Write,
-    path::Path,
     str::from_utf8,
     task::{Context, Poll},
 };
 
-use super::super::{common, common::Stack, primitives::file, GeneralError};
+use super::identity::Identity;
 
 /// The main network behavior for the Meros protocol.
 #[derive(NetworkBehaviour)]
@@ -98,16 +94,9 @@ impl crate::CanSerialize for PeerId {
 /// A node on the Meros network. A Node stores and broadcasts shards on the network
 /// to host files.
 pub struct Node {
-    /// The node's libp2p ed25519 keypair
-    keypair: identity::Keypair,
-
-    /// The node's libp2p PeerId (hash of the pubk)
-    peer_id: PeerId,
-
-    /// This node's trust in the network
-    trust: u32,
-
-    /// The collection of shards that this node holds.
+    /// The node's identity and private key on the network (keypair and peer id)
+    identity: Identity,
+    // The collection of shards that this node holds.
     // shards: ShardStore Map between fileID and a Vec of shards, but a sled db. Need to
     // re-write the sled db code (its garbage).
 }
@@ -117,53 +106,27 @@ impl Node {
     /// # Arguments
     /// * `name` - The local name of the node on the disk.
     pub fn new(name: &str) -> Result<Self, Box<dyn Error>> {
-        let path = Path::new(common::DATADIR).join("identities").join(name);
-
-        // If the identity already exists, load it from disk
-        if path.exists() {
-            let keypair =
-                identity::Keypair::Ed25519(identity::ed25519::Keypair::decode(
-                    &mut fs::read(path.join("keypair"))?,
-                )?);
-            return Ok(Node {
-                peer_id: PeerId::from_public_key(keypair.public()),
-                keypair,
-                node_type: NodeType::default(),
-            });
-        }
-
-        // If it does not, create it and persist it to disk
-        let keypair = identity::Keypair::generate_ed25519();
-        let peer_id = PeerId::from_public_key(keypair.public());
-        fs::create_dir_all(&path)?;
-        if let identity::Keypair::Ed25519(k) = &keypair {
-            fs::File::create(&path.join("keypair"))?.write_all(&k.encode())?;
-            return Ok(Node {
-                peer_id,
-                keypair,
-            });
-        }
-        Err(Box::new(GeneralError {
-            details: String::from("error creating new node"),
-        }))
+        Ok(Node {
+            identity: Identity::new(name)?,
+        })
     }
 
     /// Start listening on a node
     pub fn start_listening(&mut self, port: u16) -> Result<(), Box<dyn Error>> {
         // Build the swarm
         let transport =
-            libp2p::build_tcp_ws_secio_mplex_yamux(self.keypair.clone())?;
+            libp2p::build_tcp_ws_secio_mplex_yamux(self.identity.keypair.clone())?;
 
         let mut swarm = {
             let kademlia = {
-                let store = MemoryStore::new(self.peer_id.clone());
-                Kademlia::new(self.peer_id.clone(), store)
+                let store = MemoryStore::new(self.identity.peer_id.clone());
+                Kademlia::new(self.identity.peer_id.clone(), store)
             };
 
             let mdns = Mdns::new()?;
             let behavior = MerosBehavior { kademlia, mdns };
 
-            Swarm::new(transport, behavior, self.peer_id.clone())
+            Swarm::new(transport, behavior, self.identity.peer_id.clone())
         };
 
         // Start listening on this node
@@ -176,7 +139,6 @@ impl Node {
         let mut listening = false;
         let fut = future::poll_fn(move |cx: &mut Context<'_>| {
             loop {
-
                 // First do node stuff (what does the node need to do?)
 
                 // Then poll the swarm for an event

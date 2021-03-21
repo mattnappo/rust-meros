@@ -4,7 +4,7 @@ pub mod common;
 pub mod core;
 pub mod crypto;
 pub mod db;
-pub mod node;
+pub mod p2p;
 pub mod primitives;
 
 #[derive(Debug)]
