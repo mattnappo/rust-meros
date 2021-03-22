@@ -110,6 +110,7 @@ impl Node {
     pub fn new(name: &str) -> Result<Self, Box<dyn Error>> {
         Ok(Node {
             identity: Identity::new(name)?,
+            shards: ShardStore::new(name)?,
         })
     }
 

@@ -1,19 +1,19 @@
+use super::shard::*;
+use crate::crypto;
+use crate::GeneralError;
+use crate::{crypto::hash, CanSerialize};
 use crc32fast::Hasher;
+use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::PartialEq,
-    collections::HashMap,
+    error::Error,
     fs,
     hash::Hash,
     io::prelude::*,
     path,
     time::{SystemTime, SystemTimeError, UNIX_EPOCH},
 };
-
-use libp2p::PeerId;
-
-use super::shard::*;
-use crate::{crypto::hash, CanSerialize};
 
 /// The structure used for the identification of a file on the meros
 /// network.
@@ -57,20 +57,14 @@ impl CanSerialize for FileID {
     }
 }
 
-/// All possible errors that could be returned from `File`'s methods.
-#[derive(Debug)]
-pub enum FileError {
-    IO(std::io::Error),
-    InvalidFilepath(crate::GeneralError),
-    SystemTimeError(SystemTimeError),
-    ShardError(ShardError),
-}
+/// The byte representation of a libp2p::PeerId. This alias exists for readability.
+type PeerIdSerial = Vec<u8>;
 
 /// The structure representing a file on the meros network. This structure
 /// contains valuable information about a file, but does not contain the data
 /// of the file. Rather, that data is stored among the nodes described in the
 /// `shards` field.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct File {
     /// The name of the file
     pub filename: String,
@@ -85,17 +79,17 @@ pub struct File {
     checksum: u32,
 
     /// Ed25519 digital signature of the entire file struct. When calculated,
-    /// this field is all 0s.
+    /// this field is empty.
     signature: Vec<u8>,
 
     /// The original owner of the file.
-    owner: PeerId,
+    owner: PeerIdSerial,
 
     /// The configuration of the shards.
     pub shard_config: ShardConfig,
 
     // The locations of the shards on the network
-    shards: Vec<PeerId>, // For scalability: Make this a ShardID-Vec<PeerId> map
+    shards: Vec<PeerIdSerial>, // For scalability: Make this a ShardID-Vec<PeerId> map
 }
 
 impl File {
@@ -108,36 +102,40 @@ impl File {
     ///
     /// # Arguments
     /// * `path` - the path of the file to read from on the disk
-    /// * `options` - information about how the data should be sharded
+    /// * `config` - information about how the data should be sharded
+    /// * `priv_key` - the private key of the owner of the file
     pub fn new(
         path: &path::Path,
-        options: ShardingOptions,
+        config: ShardConfig,
+        priv_key: &ecies_ed25519::SecretKey,
     ) -> Result<(Self, Vec<Shard>), Box<dyn Error>> {
         // Read the file from the disk to generate validation metadata
         let mut fd = fs::File::open(path)?;
         let mut file_data = Vec::new(); // The contents of the file
         fd.read_to_end(&mut file_data)?;
 
-        let filename = path.file_name()?.to_str()?;
+        let filename = match path.file_name() {
+            Some(p) => match p.to_str() {
+                Some(s) => s,
+                None => {
+                    return Err(Box::new(GeneralError::new("invalid filename")))
+                }
+            },
+            None => return Err(Box::new(GeneralError::new("invalid path"))),
+        };
 
         // Generate a file id and get the time of hashing
         let (file_id, hash_date) = FileID::new(filename, &file_data)?;
 
         // Calculate the shards
-        let (shards, config) = Shard::shard(file_data, options)?;
-        base_file.shard_config = Some(config);
+        let shards = Shard::shard(file_data, &mut config)?;
 
-        // Init the shard data into the database
-        let mut internal_shards = HashMap::new(); // The shard data stored in the dht
-        for i in 0..new_shards.len() {
-            internal_shards.insert(new_shards[i].id.clone(), None);
-        }
-        base_file.shards = Some(internal_shards); // For the struct
-
-        shards = Some(new_shards); // For returning
+        // Construct the libp2p keypair
+        let pub_key = ecies_ed25519::PublicKey::from_secret(priv_key);
+        let keypair = crypto::ecies_to_libp2p(priv_key, &pub_key);
 
         // Construct the file
-        let file = Self {
+        let mut file = Self {
             filename: filename.to_string(),
             id: file_id,
             creation_date: hash_date,
@@ -146,14 +144,16 @@ impl File {
                 hasher.update(&file_data);
                 hasher.finalize()
             },
-            signature: {
-
-            }
-            owner: ,
-            shard_config: None,
-            shards: Vec::new() // Empty because the network will handle 
+            signature: Vec::new(), // Temporary so that the entire file can be signed
+            owner: PeerId::from_public_key(keypair.public()).into_bytes(),
+            shard_config: config,
+            shards: Vec::new(), // Empty because the network will handle this part
         };
-        Ok((base_file, shards))
+
+        // Calc digital signature
+        file.signature = keypair.sign(&file.to_bytes()?)?;
+
+        Ok((file, shards))
     }
 }
 
@@ -196,7 +196,7 @@ mod tests {
 
         let (file, shards) = File::new(
             Path::new("testfile.txt"),
-            Some(ShardingOptions {
+            Some(ShardConfig {
                 shard_count: 10,
                 public_key: Some(public),
                 private_key: None,

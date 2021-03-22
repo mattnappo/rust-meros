@@ -14,7 +14,6 @@ struct Client {
 
 /// An operation that a node/client on the network can perform. This enum will
 /// grow as features on the network grow.
-#[derive(Debug)]
 enum Operation {
     /// Store a file on the network. Also sends the shards to all other nodes.
     PutFile {
@@ -54,6 +53,7 @@ impl Client {
         })
     }
 
+    /*
     fn get_file(&self, file_id: file::FileID, config: OperationConfig);
 
     fn put_file(
@@ -62,23 +62,24 @@ impl Client {
         file_bytes: Vec<u8>,
         config: OperationConfig,
     );
+    */
 }
-/*
 
-                        for op in pending_operations.vec().into_iter() {
-                            match op {
-                                Operation::PutFile {
-                                    file_metadata,
-                                    file_bytes,
-                                    config,
-                                } => self.put_file(
-                                    file_metadata,
-                                    file_bytes,
-                                    config,
-                                ),
-                                Operation::GetFile { file_id, config } => {
-                                    self.get_file(file_id, config)
-                                }
-                            }
-                        }
+/*
+for op in pending_operations.vec().into_iter() {
+    match op {
+        Operation::PutFile {
+            file_metadata,
+            file_bytes,
+            config,
+        } => self.put_file(
+            file_metadata,
+            file_bytes,
+            config,
+        ),
+        Operation::GetFile { file_id, config } => {
+            self.get_file(file_id, config)
+        }
+    }
+}
 */

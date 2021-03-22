@@ -17,6 +17,9 @@ libp2p = "0.23.0"
 futures = "0.3.1"
 async-std = "1.6.2"
 
+[dependencies.ed25519-dalek]
+version = "1"
+
 [lib]
 name = "rust_meros"
 path = "src/lib.rs"

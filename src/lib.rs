@@ -1,11 +1,11 @@
-use std::fmt;
-
 pub mod common;
 pub mod core;
 pub mod crypto;
 pub mod db;
 pub mod p2p;
 pub mod primitives;
+
+use std::fmt;
 
 #[derive(Debug)]
 pub struct GeneralError {

@@ -13,8 +13,6 @@ impl ShardStore {
         Ok(Self(sled::open(format!(
             "{}/{}/{}/{}",
             DATADIR, "identities", name, "shard_store"
-
-
         ))?))
     }
 
@@ -27,16 +25,15 @@ impl ShardStore {
         self.0.insert(file_id.to_bytes()?, shards.to_bytes()?)
     }
 
-
     /// Fetch a record from the database.
-    fn fetch(&self, file_id: &file::FileID) -> Result<Option<Vec<Shard>>, Box<dyn Error>> {
-        let get = self.database
+    fn fetch(
+        &self,
+        file_id: &file::FileID,
+    ) -> Result<Option<Vec<Shard>>, Box<dyn Error>> {
+        let get = self
+            .database
             .get(k.to_bytes().map_err(|e| DatabaseError::Serialize(e))?)
             .map_err(|e| DatabaseError::Internal(e));
-
-        return match get {
-            Some()
-        }
     }
 }
 
