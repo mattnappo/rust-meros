@@ -39,3 +39,11 @@ pub fn ecies_to_libp2p(
 
     identity::Keypair::Ed25519(identity::ed25519::Keypair::from(libp2p_sk)) // libp2p pair
 }
+
+/// Convert a ecies public key into a libp2p public key.
+pub fn ecies_pub_to_libp2p(pk: &ecies_ed25519::PublicKey) -> identity::PublicKey {
+    let dalek = ed25519_dalek::PublicKey::from_bytes(&pk.to_bytes()).unwrap();
+    identity::PublicKey::Ed25519(
+        identity::ed25519::PublicKey::decode(&dalek.to_bytes()).unwrap(),
+    )
+}

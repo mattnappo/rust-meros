@@ -170,7 +170,7 @@ impl Shard {
     /// stored inside the given shards.
     pub fn reconstruct(
         shards: &Vec<Shard>, // Just bytes for now for the same debugging purposes
-        config: ShardConfig,
+        config: &ShardConfig,
         private_key: Option<&SecretKey>,
     ) -> Result<Vec<u8>, Box<dyn Error>> {
         // Reconstruct
@@ -307,8 +307,7 @@ mod tests {
 
     #[test]
     fn test_from_bytes() {
-        let serialized =
-            Shard::new(vec![1u8, 10u8], 1).unwrap().to_bytes().unwrap();
+        let serialized = Shard::new(vec![1u8, 10u8], 1).unwrap().to_bytes().unwrap();
         /*
                 let extra_bytes: &[u8] = &[
                     2u8, 5u8, 2u8, 5u8, 2u8, 5u8, 2u8, 5u8, 2u8, 5u8, 2u8, 5u8,

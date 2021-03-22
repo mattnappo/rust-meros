@@ -39,6 +39,15 @@ impl FileID {
             time,
         ))
     }
+
+    /// Check that this FileID matches that of the information given.
+    pub fn matches(&self, filename: &str, bytes: &Vec<u8>, time: u128) -> bool {
+        let a = [filename.as_bytes(), &bytes[..], time.to_string().as_bytes()]
+            .concat()
+            .to_vec();
+
+        true
+    }
 }
 
 impl PartialEq for FileID {
@@ -117,9 +126,7 @@ impl File {
         let filename = match path.file_name() {
             Some(p) => match p.to_str() {
                 Some(s) => s,
-                None => {
-                    return Err(Box::new(GeneralError::new("invalid filename")))
-                }
+                None => return Err(Box::new(GeneralError::new("invalid filename"))),
             },
             None => return Err(Box::new(GeneralError::new("invalid path"))),
         };
@@ -150,10 +157,54 @@ impl File {
             shards: Vec::new(), // Empty because the network will handle this part
         };
 
-        // Calc digital signature
-        file.signature = keypair.sign(&file.to_bytes()?)?;
+        // Calc digital signature of the file and the file bytes
+        let sig_data = [&file.to_bytes()?[..], &file_data[..]].concat().to_vec();
+        file.signature = keypair.sign(&sig_data)?;
 
         Ok((file, shards))
+    }
+
+    /// Check that a file is valid against some shards.
+    fn is_valid(
+        &self,
+        shards: &Vec<Shard>,
+        priv_key: Option<&ecies_ed25519::SecretKey>,
+    ) -> bool {
+        // Reconstruct the shards
+        let data = match Shard::reconstruct(shards, &self.shard_config, priv_key) {
+            Ok(d) => d,
+            Err(e) => {
+                println!("invalid file/shard pair: {:?}", e);
+                return false;
+            }
+        };
+
+        // Check the checksum
+        let checksum = {
+            let mut hasher = Hasher::new();
+            hasher.update(&data);
+            hasher.finalize()
+        } == self.checksum;
+
+        // Check the file id
+        let file_id =
+            self.id
+                .matches(self.filename.as_str(), &data, self.creation_date);
+
+        // Check the signature
+        let libp2p_pk = crypto::ecies_pub_to_libp2p(&self.shard_config.pub_key); // Convert key
+        let self_bytes = match self.to_bytes() {
+            // Serialize self
+            Ok(b) => b,
+            Err(e) => {
+                println!("could not serialize file: {:?}", e);
+                return false;
+            }
+        };
+        let sig_data = [&self_bytes, &data[..]].concat().to_vec(); // The data to check
+        let signature = libp2p_pk.verify(&sig_data, &self.signature); // Verify the sig
+
+        checksum && file_id && signature
     }
 }
 
