@@ -13,11 +13,7 @@ use std::{
 use libp2p::PeerId;
 
 use super::shard::*;
-use crate::{
-    crypto::hash,
-    db::{IsKey, IsValue},
-    CanSerialize,
-};
+use crate::{crypto::hash, CanSerialize};
 
 /// The structure used for the identification of a file on the meros
 /// network.
@@ -99,72 +95,64 @@ pub struct File {
     pub shard_config: ShardConfig,
 
     // The locations of the shards on the network
-    shards: Vec<PeerId>,
+    shards: Vec<PeerId>, // For scalability: Make this a ShardID-Vec<PeerId> map
 }
 
 impl File {
     /// Abstraction method to generate the metadata of a `File`.
     /// This method does not distribute a file over the meros network.
-    /// However, it does prepare the file for sharding by pre-calculating
-    /// the shards and assigning them to null nodes (temporarily).
+    /// However, it does prepare the file for distribution by pre-calculating
+    /// the shards, but not assigning them to any nodes yet. The network will
+    /// handle that. `new` returns a File struct (which is stored in the main
+    /// Kad-dht), and the actual sharded data (the Vec<Shard>).
+    ///
+    /// # Arguments
+    /// * `path` - the path of the file to read from on the disk
+    /// * `options` - information about how the data should be sharded
     pub fn new(
         path: &path::Path,
-        sharding_options: Option<ShardingOptions>,
-    ) -> Result<(Self, Option<Vec<Shard>>), FileError> {
+        options: ShardingOptions,
+    ) -> Result<(Self, Vec<Shard>), Box<dyn Error>> {
         // Read the file from the disk to generate validation metadata
-        let mut fd = fs::File::open(path).map_err(|e| FileError::IO(e))?;
-        let mut buf = Vec::new(); // The contents of the file
-        fd.read_to_end(&mut buf).map_err(|e| FileError::IO(e))?;
+        let mut fd = fs::File::open(path)?;
+        let mut file_data = Vec::new(); // The contents of the file
+        fd.read_to_end(&mut file_data)?;
 
-        // Get the name of the file (clean this up somehow TODO)
-        let invalid_path =
-            Err(FileError::InvalidFilepath(crate::GeneralError::new(
-                format!("{} is an invalid filepath", path.display()).as_str(),
-            )));
-        let filename = match path.file_name() {
-            Some(name) => match name.to_str() {
-                Some(s) => s,
-                None => return invalid_path,
-            },
-            None => return invalid_path,
-        };
+        let filename = path.file_name()?.to_str()?;
 
-        // Generate a file id and get the time
-        let (file_id, hash_date) = FileID::new(filename, &buf)
-            .map_err(|e| FileError::SystemTimeError(e))?;
+        // Generate a file id and get the time of hashing
+        let (file_id, hash_date) = FileID::new(filename, &file_data)?;
+
+        // Calculate the shards
+        let (shards, config) = Shard::shard(file_data, options)?;
+        base_file.shard_config = Some(config);
+
+        // Init the shard data into the database
+        let mut internal_shards = HashMap::new(); // The shard data stored in the dht
+        for i in 0..new_shards.len() {
+            internal_shards.insert(new_shards[i].id.clone(), None);
+        }
+        base_file.shards = Some(internal_shards); // For the struct
+
+        shards = Some(new_shards); // For returning
 
         // Construct the file
-        let mut base_file = Self {
+        let file = Self {
             filename: filename.to_string(),
             id: file_id,
             creation_date: hash_date,
             checksum: {
                 let mut hasher = Hasher::new();
-                hasher.update(&buf);
+                hasher.update(&file_data);
                 hasher.finalize()
             },
-            shard_config: None,
-            shards: None,
-        };
+            signature: {
 
-        let mut shards: Option<Vec<Shard>> = None;
-
-        // Shard if there are sharding options
-        if let Some(options) = sharding_options {
-            let (new_shards, config) = Shard::shard(buf, options)
-                .map_err(|e| FileError::ShardError(e))?;
-            base_file.shard_config = Some(config);
-
-            // Init the shard data into the database
-            let mut internal_shards = HashMap::new(); // The shard data stored in the dht
-            for i in 0..new_shards.len() {
-                internal_shards.insert(new_shards[i].id.clone(), None);
             }
-            base_file.shards = Some(internal_shards); // For the struct
-
-            shards = Some(new_shards); // For returning
-        }
-
+            owner: ,
+            shard_config: None,
+            shards: Vec::new() // Empty because the network will handle 
+        };
         Ok((base_file, shards))
     }
 }

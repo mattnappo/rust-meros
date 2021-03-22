@@ -14,6 +14,7 @@ use std::{
 };
 
 use super::identity::Identity;
+use super::store::ShardStore;
 
 /// The main network behavior for the Meros protocol.
 #[derive(NetworkBehaviour)]

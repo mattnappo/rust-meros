@@ -32,11 +32,9 @@ pub struct ShardID {
 }
 
 impl ShardID {
-    pub fn new(data: &Vec<u8>) -> Result<(Self, u128), ShardError> {
-        let time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|e| ShardError::TimestampError(e))?
-            .as_secs() as u128;
+    // Calculate a ShardID of the data in a shard.
+    pub fn new(data: &Vec<u8>) -> Result<(Self, u128), Box<dyn Error>> {
+        let time = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as u128;
 
         let data = [&data[..], time.to_string().as_bytes()].concat().to_vec();
         Ok((
@@ -45,6 +43,19 @@ impl ShardID {
             },
             time,
         ))
+    }
+
+    /// Construct a ShardID from the bytes of a ShardID. This does not
+    /// guarantee that the ShardID is a valid ShardID.
+    pub fn from_bytes(bytes: &[u8; HASH_SIZE]) -> Self {
+        ShardID { id: &bytes[..] }
+    }
+
+    /// Check that this ShardID matches that of the data and timestamp given.
+    pub fn matches(&self, data: &Vec<u8>, time: u128) -> bool {
+        &ShardID::from_bytes(&hash::hash_bytes(
+            [&data[..], time.to_string().as_bytes()].concat().to_vec(),
+        )) == self
     }
 }
 
@@ -79,20 +90,30 @@ impl CanSerialize for ShardID {
 }
 
 /// A structure used to configure how a vector of bytes is sharded.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize)]
 pub struct ShardOptions {
     /// The number of shards.
     pub shard_count: usize,
 
-    /// The encryption keypair (using ecies ed235519 keys).
-    /// If None, then the shards are not encrypted.
-    pub keypair: Option<(PublicKey, PrivateKey)>,
+    /// The owner's public key.
+    pub pub_key: PublicKey,
 
     /// Whether the shard is compressed or not
     pub compress: bool,
 
     /// The sizes of the shards, in order
     pub sizes: Vec<usize>,
+}
+
+impl std::Default for ShardOptions {
+    fn default() -> Self {
+        Self {
+            shard_count: 0,
+            keypair: None,
+            compress: false,
+            sizes: Vec::new(),
+        }
+    }
 }
 
 impl CanSerialize for ShardOptions {
@@ -155,24 +176,26 @@ impl Shard {
     pub fn shard(
         bytes: Vec<u8>,
         options: ShardingOptions,
-    ) -> Result<(Vec<Shard>, ShardConfig), ShardError> {
+        priv_key: Option<SecretKey>,
+    ) -> Result<Vec<Shard>, Box<dyn Error>> {
         // Encrypt the bytes
-        let mut b = bytes;
-        if let Some(key) = options.public_key {
-            b = encryption::encrypt_bytes(&key, &b)
-                .map_err(|e| ShardError::CryptoError(e))?;
+        if options.encrypt {
+            let mut b = bytes;
+            match options.public_key {
+                Some(key) => {
+                    b = encryption::encrypt_bytes(&key, &b)?;
+                }
+                None => {
+                    return Err(GeneralError(
+                        "private key not given, cannot encrypt shard data",
+                    ));
+                }
+            }
         }
 
-        // Shard the (possibly encrypted) bytes and return
+        // Shard the bytes and return
         let sizes = calculate_shard_sizes(b.len(), options.shard_count)?;
-        Ok((
-            split_bytes(&b, &sizes)?,
-            ShardConfig {
-                encryption: options.public_key.is_none(),
-                compression: options.compress,
-                sizes,
-            },
-        ))
+        Ok(split_bytes(&b, &sizes)?)
     }
 
     /// The inverse operation of `shard`. Extracts and reconstructs the bytes
@@ -180,7 +203,7 @@ impl Shard {
     pub fn reconstruct(
         shards: &Vec<Shard>, // Just bytes for now for the same debugging purposes
         options: ShardingOptions,
-    ) -> Result<Vec<u8>, ShardError> {
+    ) -> Result<Vec<u8>, Box<dyn Error>> {
         // Reconstruct
         let mut data: Vec<u8> = Vec::new();
         let mut counter = 0;
@@ -193,17 +216,21 @@ impl Shard {
                     data.push(*byte);
                 }
             } else {
-                return Err(ShardError::CannotReconstruct(GeneralError::new(
+                return Err(GeneralError::new(
                     "invalid shard; cannot use it to reconstruct",
-                )));
+                ));
             }
             counter += 1;
         }
 
-        // Decrypt if a key is given
-        if let Some(key) = options.private_key {
-            return encryption::decrypt_bytes(&key, &data)
-                .map_err(|e| ShardError::CryptoError(e));
+        // Decrypt if encrypted
+        if options.encrypt {
+            return match private_key {
+                Some(key) => encryption::decrypt_bytes(&key, &data),
+                None => Err(GeneralError(
+                    "private key not given, cannot decrypt shard data",
+                )),
+            };
         }
         Ok(data)
     }
