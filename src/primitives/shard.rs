@@ -4,7 +4,6 @@ use crate::{
 };
 use ecies_ed25519::{PublicKey, SecretKey};
 use math::round::floor;
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::{
     clone::Clone,
@@ -83,7 +82,7 @@ impl CanSerialize for ShardID {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ShardConfig {
     /// The number of shards.
-    pub shard_count: usize,
+    pub shard_count: usize, // make u16
 
     /// The owner's public key.
     pub pub_key: PublicKey,
@@ -100,9 +99,9 @@ pub struct ShardConfig {
 
 impl ShardConfig {
     /// Create the default shard config (will be overwritten by file::new())
-    pub fn with_pubkey(pk: &PublicKey) -> Self {
+    pub fn new(n_shards: usize, pk: &PublicKey) -> Self {
         Self {
-            shard_count: 0,
+            shard_count: n_shards,
             pub_key: pk.clone(),
             compress: false,
             encrypt: false,
@@ -123,7 +122,7 @@ impl CanSerialize for ShardConfig {
 
 /// The structure representing a `Shard` to be stored in a node's
 /// local shard database.
-#[derive(Serialize, Deserialize, Debug, Hash)]
+#[derive(Serialize, Deserialize, Debug, Hash, Clone)]
 pub struct Shard {
     // A unique ID, used for identification on the network
     pub id: ShardID,
@@ -314,6 +313,7 @@ impl CanSerialize for Shard {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -504,3 +504,4 @@ mod tests {
         assert_eq!(b, reconstructed_b);
     }
 }
+*/

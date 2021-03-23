@@ -230,6 +230,7 @@ impl CanSerialize for File {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,23 +252,22 @@ mod tests {
         println!("shards: {:?}", shards);
     }
 
-    /*
-        #[test]
-        fn test_to_bytes() {
-            let file = File::new(Path::new("testfile.txt"), None).unwrap();
-            let bytes = file.0.to_bytes().unwrap();
-            println!("bytes: {:?}", bytes);
-        }
+    #[test]
+    fn test_to_bytes() {
+        let file = File::new(Path::new("testfile.txt"), None).unwrap();
+        let bytes = file.0.to_bytes().unwrap();
+        println!("bytes: {:?}", bytes);
+    }
 
-        #[test]
-        fn test_from_bytes() {
-            let file = File::new(Path::new("testfile.txt"), None).unwrap();
-            let serialized = file.0.to_bytes().unwrap();
+    #[test]
+    fn test_from_bytes() {
+        let file = File::new(Path::new("testfile.txt"), None).unwrap();
+        let serialized = file.0.to_bytes().unwrap();
 
-            let deserialized = File::from_bytes(serialized).unwrap();
-            println!("deserialized file: {:?}", deserialized);
+        let deserialized = File::from_bytes(serialized).unwrap();
+        println!("deserialized file: {:?}", deserialized);
 
-            // assert_eq!(file, deserialized);
-        }
-    */
+        // assert_eq!(file, deserialized);
+    }
 }
+*/

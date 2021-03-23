@@ -2,7 +2,7 @@ use libp2p::{
     kad::{record::store::MemoryStore, Kademlia, KademliaEvent, QueryResult},
     mdns::{Mdns, MdnsEvent},
     swarm::NetworkBehaviourEventProcess,
-    NetworkBehaviour, PeerId, Swarm,
+    NetworkBehaviour, Swarm,
 };
 
 use async_std::task;

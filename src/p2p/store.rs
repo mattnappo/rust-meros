@@ -1,6 +1,8 @@
-use crate::common::DATADIR;
-use crate::primitives::{file, shard};
-use crate::CanSerialize;
+use crate::{
+    common::DATADIR,
+    primitives::{file, shard},
+    CanSerialize, GeneralError,
+};
 use sled;
 use std::error::Error;
 
@@ -22,38 +24,35 @@ impl ShardStore {
         &mut self,
         file_id: &file::FileID,
         shards: &Vec<shard::Shard>,
-    ) -> Result<(), Box<dyn Error>> {
-        let shards_bytes = shards
-            .into_iter()
-            .map(|s| s.to_bytes().unwrap())
-            .collect::<Vec<Vec<u8>>>()
-            .concat();
-        println!("shard bytes: {:?}", shards_bytes);
-        Ok(())
-        //match self.0.insert(file_id.to_bytes()?, shards.to_bytes()?) {
-        //    Ok(_) => _,
-        //    Err(e) => e
-        //}
+    ) -> Result<Option<sled::IVec>, Box<dyn Error>> {
+        let shards_bytes = bincode::serialize(shards)?;
+
+        self.0
+            .insert(file_id.to_bytes()?, shards_bytes)
+            .map_err(|e| e.into())
     }
 
-    /*
     /// Get all the shards attached to a file id
     fn get(
         &self,
         file_id: &file::FileID,
-    ) -> Result<Option<Vec<Shard>>, Box<dyn Error>> {
-        let get = self
-            .database
-            .get(k.to_bytes().map_err(|e| DatabaseError::Serialize(e))?)
-            .map_err(|e| DatabaseError::Internal(e));
+    ) -> Result<Option<Vec<shard::Shard>>, Box<dyn Error>> {
+        let shards_bytes = self.0.get(file_id.to_bytes()?)?;
+        match shards_bytes {
+            Some(bytes) => {
+                Ok(Some(bincode::deserialize::<Vec<shard::Shard>>(&bytes)?))
+            }
+            None => Err(Box::new(GeneralError::new(
+                format!("no shards in shardstore for {:?}", file_id).as_str(),
+            ))),
+        }
     }
-    */
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::primitives::file::{File, FileID};
+    use crate::primitives::file::File;
     use crate::primitives::shard::ShardConfig;
     use ecies_ed25519::*;
     use std::path::Path;
@@ -64,16 +63,20 @@ mod tests {
     }
 
     #[test]
-    fn test_put() {
+    fn test_put_get() {
         let (sk, pk) = keypair();
-        let (file, shards) = &File::new(
-            Path::new("./testfile.txt"),
-            ShardConfig::with_pubkey(&pk),
-            &sk,
-        )
-        .unwrap();
+        let (file, shards) =
+            &File::new(Path::new("./testfile.txt"), ShardConfig::new(5, &pk), &sk)
+                .unwrap();
+
+        println!("shards: {:?}", shards);
 
         let mut store = ShardStore::new("test_db").unwrap();
         store.put(&file.id, &shards).unwrap();
+
+        match store.get(&file.id).unwrap() {
+            Some(s) => assert_eq!(shards, &s),
+            None => panic!(),
+        }
     }
 }
