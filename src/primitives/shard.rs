@@ -80,7 +80,7 @@ impl CanSerialize for ShardID {
 }
 
 /// A structure used to configure how a vector of bytes is sharded.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct ShardConfig {
     /// The number of shards.
     pub shard_count: usize,
@@ -96,6 +96,19 @@ pub struct ShardConfig {
 
     /// The sizes of the shards, in order
     pub sizes: Vec<usize>,
+}
+
+impl ShardConfig {
+    /// Create the default shard config (will be overwritten by file::new())
+    pub fn with_pubkey(pk: &PublicKey) -> Self {
+        Self {
+            shard_count: 0,
+            pub_key: pk.clone(),
+            compress: false,
+            encrypt: false,
+            sizes: Vec::new(),
+        }
+    }
 }
 
 impl CanSerialize for ShardConfig {
@@ -150,20 +163,30 @@ impl Shard {
 
     /// Given some bytes, split the bytes and return a vector of `Shard`s.
     pub fn shard(
-        bytes: Vec<u8>,
-        config: &mut ShardConfig,
-    ) -> Result<Vec<Shard>, Box<dyn Error>> {
+        bytes: &Vec<u8>,
+        config: ShardConfig,
+    ) -> Result<(Vec<Shard>, ShardConfig), Box<dyn Error>> {
         // Encrypt the bytes
         let mut b = bytes;
+        let mut a: Vec<u8> = Vec::new();
         if config.encrypt {
-            b = encryption::encrypt_bytes(&config.pub_key, &b)?;
+            a = encryption::encrypt_bytes(&config.pub_key, &b)?;
+        }
+        // Clean this up, very hacky
+        if a.len() > 0 {
+            b = &a;
         }
 
-        // Shard the bytes and return
+        // Shard the bytes
         let sizes = calculate_shard_sizes(b.len(), config.shard_count)?;
-        config.sizes = sizes;
-        config.shard_count = sizes.len();
-        Ok(split_bytes(&b, &sizes)?)
+        let shards = split_bytes(&b, &sizes)?;
+
+        // Update the config
+        let mut new_config = config.clone();
+        new_config.shard_count = sizes.len();
+        new_config.sizes = sizes;
+
+        Ok((shards, new_config))
     }
 
     /// The inverse operation of `shard`. Extracts and reconstructs the bytes

@@ -82,16 +82,6 @@ impl NetworkBehaviourEventProcess<KademliaEvent> for MerosBehavior {
     }
 }
 
-impl crate::CanSerialize for PeerId {
-    type S = Self;
-    fn to_bytes(&self) -> bincode::Result<Vec<u8>> {
-        Ok(self.into_bytes())
-    }
-    fn from_bytes(bytes: Vec<u8>) -> bincode::Result<Self> {
-        Ok(PeerId::from_bytes(bytes).unwrap())
-    }
-}
-
 /// A node on the Meros network. A Node stores and broadcasts shards on the network
 /// to host files.
 pub struct Node {
@@ -133,10 +123,7 @@ impl Node {
         };
 
         // Start listening on this node
-        Swarm::listen_on(
-            &mut swarm,
-            format!("/ip4/0.0.0.0/tcp/{}", port).parse()?,
-        )?;
+        Swarm::listen_on(&mut swarm, format!("/ip4/0.0.0.0/tcp/{}", port).parse()?)?;
 
         // Construct the future for handling lines from stdin
         let mut listening = false;
