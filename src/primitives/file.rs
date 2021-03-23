@@ -73,7 +73,7 @@ type PeerIdSerial = Vec<u8>;
 /// contains valuable information about a file, but does not contain the data
 /// of the file. Rather, that data is stored among the nodes described in the
 /// `shards` field.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct File {
     /// The name of the file
     pub filename: String,
@@ -159,14 +159,19 @@ impl File {
 
         // Calc digital signature of the file and the file bytes
         let sig_data = [&file.to_bytes()?[..], &file_data[..]].concat().to_vec();
+        println!("sigdata on creation: {:?}", sig_data);
         file.signature = keypair.sign(&sig_data)?;
+        println!("sig on creation: {:?}", file.signature);
 
         Ok((file, shards))
     }
 
     /// Check that a file is valid against some shards.
+    /// # Arguments
+    /// * `shards` - The shards that the file will be compared to
+    /// * `priv_key` - If the shards are encrypted, this key will be used to decrypt them
     fn is_valid(
-        &self,
+        &mut self,
         shards: &Vec<Shard>,
         priv_key: Option<&ecies_ed25519::SecretKey>,
     ) -> bool {
@@ -174,7 +179,7 @@ impl File {
         let data = match Shard::reconstruct(shards, &self.shard_config, priv_key) {
             Ok(d) => d,
             Err(e) => {
-                println!("invalid file/shard pair: {:?}", e);
+                eprintln!("invalid file/shard pair: {:?}", e);
                 return false;
             }
         };
@@ -186,23 +191,32 @@ impl File {
             hasher.finalize()
         } == self.checksum;
 
+        println!("checksum: {}", checksum);
+
         // Check the file id
         let file_id =
             self.id
                 .matches(self.filename.as_str(), &data, self.creation_date);
 
+        println!("file id: {}", file_id);
+
         // Check the signature
+        let check_sig = self.signature.clone(); // Copy the signature
         let libp2p_pk = crypto::ecies_pub_to_libp2p(&self.shard_config.pub_key); // Convert key
+        self.signature = Vec::new(); // Clear the sig (this is how the sig was originally calcd)
         let self_bytes = match self.to_bytes() {
             // Serialize self
             Ok(b) => b,
             Err(e) => {
-                println!("could not serialize file: {:?}", e);
+                eprintln!("could not serialize file: {:?}", e);
                 return false;
             }
         };
         let sig_data = [&self_bytes, &data[..]].concat().to_vec(); // The data to check
-        let signature = libp2p_pk.verify(&sig_data, &self.signature); // Verify the sig
+        println!("sigdata in verify: {:?}", sig_data);
+        let signature = libp2p_pk.verify(&sig_data, &check_sig); // Verify the sig
+        self.signature = check_sig; // Set the file's sig back
+        println!("sig in verify: {}", signature);
 
         checksum && file_id && signature
     }
@@ -230,7 +244,6 @@ impl CanSerialize for File {
     }
 }
 
-/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -239,35 +252,26 @@ mod tests {
     use std::path::Path;
 
     #[test]
-    fn test_new_file_with_sharding() {
-        let (sk, pk) = encryption::gen_keypair("testkey", false).unwrap();
+    /// Test File::is_valid()
+    fn is_valid() {
+        // Test that it works when it should
+        let (sk1, pk1) = encryption::gen_keypair("testkey", false).unwrap();
 
-        let (file, shards) = File::new(
-            Path::new("testfile.txt"),
-            ShardConfig::with_pubkey(&pk),
-            &sk,
-        )
-        .unwrap();
+        let (mut file1, shards1) =
+            File::new(Path::new("testfile.txt"), ShardConfig::new(5, &pk1), &sk1)
+                .unwrap();
 
-        println!("shards: {:?}", shards);
-    }
+        assert!(file1.is_valid(&shards1, None));
 
-    #[test]
-    fn test_to_bytes() {
-        let file = File::new(Path::new("testfile.txt"), None).unwrap();
-        let bytes = file.0.to_bytes().unwrap();
-        println!("bytes: {:?}", bytes);
-    }
+        /*
+        // Test that it doesn't work when the shards are wrong
+        let (sk2, pk2) = encryption::gen_keypair("testkey", false).unwrap();
+        let (mut file2, shards2) =
+            File::new(Path::new("Cargo.toml"), ShardConfig::new(5, &pk2), &sk2)
+                .unwrap();
 
-    #[test]
-    fn test_from_bytes() {
-        let file = File::new(Path::new("testfile.txt"), None).unwrap();
-        let serialized = file.0.to_bytes().unwrap();
-
-        let deserialized = File::from_bytes(serialized).unwrap();
-        println!("deserialized file: {:?}", deserialized);
-
-        // assert_eq!(file, deserialized);
+        assert_eq!(file2.is_valid(&shards1, None), false);
+        assert_eq!(file1.is_valid(&shards2, None), false);
+        */
     }
 }
-*/

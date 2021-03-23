@@ -69,8 +69,6 @@ mod tests {
             &File::new(Path::new("./testfile.txt"), ShardConfig::new(5, &pk), &sk)
                 .unwrap();
 
-        println!("shards: {:?}", shards);
-
         let mut store = ShardStore::new("test_db").unwrap();
         store.put(&file.id, &shards).unwrap();
 

@@ -47,3 +47,27 @@ pub fn ecies_pub_to_libp2p(pk: &ecies_ed25519::PublicKey) -> identity::PublicKey
         identity::ed25519::PublicKey::decode(&dalek.to_bytes()).unwrap(),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand;
+
+    #[test]
+    fn test_ecies_to_libp2p() {
+        let mut csprng = rand::thread_rng();
+        let (sk, pk) = ecies_ed25519::generate_keypair(&mut csprng);
+        let kp = match ecies_to_libp2p(&sk, &pk) {
+            libp2p::identity::Keypair::Ed25519(key) => key,
+            _ => panic!("impossible arm"),
+        };
+
+        // Convert back
+        let ecies_pk =
+            ecies_ed25519::PublicKey::from_bytes(&kp.public().encode()).unwrap();
+
+        println!("{:?}", pk.to_bytes());
+        println!("{:?}", ecies_pk.to_bytes());
+        assert!(pk == ecies_pk);
+    }
+}

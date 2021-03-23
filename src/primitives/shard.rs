@@ -9,6 +9,7 @@ use std::{
     clone::Clone,
     cmp::PartialEq,
     error::Error,
+    fmt,
     hash::Hash,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -95,6 +96,18 @@ pub struct ShardConfig {
 
     /// The sizes of the shards, in order
     pub sizes: Vec<usize>,
+}
+
+impl fmt::Debug for ShardConfig {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("ShardConfig")
+            .field("shard_count", &self.shard_count)
+            .field("pub_key", &self.pub_key.to_bytes())
+            .field("compress", &self.compress)
+            .field("encrypt", &self.encrypt)
+            .field("sizes", &self.sizes)
+            .finish()
+    }
 }
 
 impl ShardConfig {
