@@ -2,7 +2,7 @@ use libp2p::{
     kad::{record::store::MemoryStore, Kademlia, KademliaEvent, QueryResult},
     mdns::{Mdns, MdnsEvent},
     swarm::NetworkBehaviourEventProcess,
-    NetworkBehaviour, PeerId, Swarm,
+    NetworkBehaviour, Swarm,
 };
 
 use async_std::task;
@@ -14,6 +14,7 @@ use std::{
 };
 
 use super::identity::Identity;
+use super::store::ShardStore;
 
 /// The main network behavior for the Meros protocol.
 #[derive(NetworkBehaviour)]
@@ -81,16 +82,6 @@ impl NetworkBehaviourEventProcess<KademliaEvent> for MerosBehavior {
     }
 }
 
-impl crate::CanSerialize for PeerId {
-    type S = Self;
-    fn to_bytes(&self) -> bincode::Result<Vec<u8>> {
-        Ok(self.into_bytes())
-    }
-    fn from_bytes(bytes: Vec<u8>) -> bincode::Result<Self> {
-        Ok(PeerId::from_bytes(bytes).unwrap())
-    }
-}
-
 /// A node on the Meros network. A Node stores and broadcasts shards on the network
 /// to host files.
 pub struct Node {
@@ -109,6 +100,7 @@ impl Node {
     pub fn new(name: &str) -> Result<Self, Box<dyn Error>> {
         Ok(Node {
             identity: Identity::new(name)?,
+            shards: ShardStore::new(name)?,
         })
     }
 
@@ -131,10 +123,7 @@ impl Node {
         };
 
         // Start listening on this node
-        Swarm::listen_on(
-            &mut swarm,
-            format!("/ip4/0.0.0.0/tcp/{}", port).parse()?,
-        )?;
+        Swarm::listen_on(&mut swarm, format!("/ip4/0.0.0.0/tcp/{}", port).parse()?)?;
 
         // Construct the future for handling lines from stdin
         let mut listening = false;

@@ -42,10 +42,9 @@ where
         KeyType::Public(name) => (name, "pub"),
     };
 
-    let mut file = StdFile::create(
-        format!("{}{}.{}", KEY_LOCATION, name, extension,).as_str(),
-    )
-    .map_err(|e| CryptoError::IOError(e))?;
+    let mut file =
+        StdFile::create(format!("{}{}.{}", KEY_LOCATION, name, extension,).as_str())
+            .map_err(|e| CryptoError::IOError(e))?;
 
     file.write_all(&key[..])
         .map_err(|e| CryptoError::IOError(e))?;
@@ -57,8 +56,7 @@ fn write_keypair(
     pair: (&SecretKey, &PublicKey),
     name: &str,
 ) -> Result<(), CryptoError> {
-    create_dir_all(Path::new(KEY_LOCATION))
-        .map_err(|e| CryptoError::IOError(e))?;
+    create_dir_all(Path::new(KEY_LOCATION)).map_err(|e| CryptoError::IOError(e))?;
 
     write_key(pair.0, KeyType::Private(name.to_string()))?;
     write_key(pair.1, KeyType::Public(name.to_string()))?;
@@ -191,6 +189,7 @@ impl CanEncrypt for Shard {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -246,3 +245,4 @@ mod tests {
         assert_eq!(b, decrypted);
     }
 }
+*/

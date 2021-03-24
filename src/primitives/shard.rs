@@ -1,28 +1,18 @@
 use crate::{
-    crypto::{encryption, hash, hash::HASH_SIZE, CryptoError},
+    crypto::{encryption, hash, hash::HASH_SIZE},
     CanSerialize, GeneralError,
 };
 use ecies_ed25519::{PublicKey, SecretKey};
 use math::round::floor;
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::{
     clone::Clone,
     cmp::PartialEq,
+    error::Error,
+    fmt,
     hash::Hash,
-    time::{SystemTime, SystemTimeError, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
-
-/// All of the errors that a `Shard` method could throw.
-#[derive(Debug)]
-pub enum ShardError {
-    SerializeError(bincode::Error),
-    TimestampError(SystemTimeError),
-    InvalidSplitSizes(GeneralError),
-    NullShardData(GeneralError),
-    CannotReconstruct(GeneralError),
-    CryptoError(CryptoError),
-}
 
 /// The structure used for the identification of a shard on the meros
 /// network.
@@ -32,11 +22,9 @@ pub struct ShardID {
 }
 
 impl ShardID {
-    pub fn new(data: &Vec<u8>) -> Result<(Self, u128), ShardError> {
-        let time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|e| ShardError::TimestampError(e))?
-            .as_secs() as u128;
+    // Calculate a ShardID of the data in a shard.
+    pub fn new(data: &Vec<u8>) -> Result<(Self, u128), Box<dyn Error>> {
+        let time = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as u128;
 
         let data = [&data[..], time.to_string().as_bytes()].concat().to_vec();
         Ok((
@@ -45,6 +33,19 @@ impl ShardID {
             },
             time,
         ))
+    }
+
+    /// Construct a ShardID from the bytes of a ShardID. This does not
+    /// guarantee that the ShardID is a valid ShardID.
+    pub fn from_bytes(bytes: [u8; HASH_SIZE]) -> Self {
+        ShardID { id: bytes }
+    }
+
+    /// Check that this ShardID matches that of the data and timestamp given.
+    pub fn matches(&self, data: &Vec<u8>, time: u128) -> bool {
+        &ShardID::from_bytes(hash::hash_bytes(
+            [&data[..], time.to_string().as_bytes()].concat().to_vec(),
+        )) == self
     }
 }
 
@@ -79,23 +80,50 @@ impl CanSerialize for ShardID {
 }
 
 /// A structure used to configure how a vector of bytes is sharded.
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ShardOptions {
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ShardConfig {
     /// The number of shards.
-    pub shard_count: usize,
+    pub shard_count: usize, // make u16
 
-    /// The encryption keypair (using ecies ed235519 keys).
-    /// If None, then the shards are not encrypted.
-    pub keypair: Option<(PublicKey, PrivateKey)>,
+    /// The owner's public key.
+    pub pub_key: PublicKey,
 
     /// Whether the shard is compressed or not
     pub compress: bool,
+
+    /// Whether the shard is encrypted or not
+    pub encrypt: bool,
 
     /// The sizes of the shards, in order
     pub sizes: Vec<usize>,
 }
 
-impl CanSerialize for ShardOptions {
+impl fmt::Debug for ShardConfig {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("ShardConfig")
+            .field("shard_count", &self.shard_count)
+            .field("pub_key", &self.pub_key.to_bytes())
+            .field("compress", &self.compress)
+            .field("encrypt", &self.encrypt)
+            .field("sizes", &self.sizes)
+            .finish()
+    }
+}
+
+impl ShardConfig {
+    /// Create the default shard config (will be overwritten by file::new())
+    pub fn new(n_shards: usize, pk: &PublicKey) -> Self {
+        Self {
+            shard_count: n_shards,
+            pub_key: pk.clone(),
+            compress: false,
+            encrypt: false,
+            sizes: Vec::new(),
+        }
+    }
+}
+
+impl CanSerialize for ShardConfig {
     type S = Self;
     fn to_bytes(&self) -> bincode::Result<Vec<u8>> {
         bincode::serialize(self)
@@ -107,7 +135,7 @@ impl CanSerialize for ShardOptions {
 
 /// The structure representing a `Shard` to be stored in a node's
 /// local shard database.
-#[derive(Serialize, Deserialize, Debug, Hash)]
+#[derive(Serialize, Deserialize, Debug, Hash, Clone)]
 pub struct Shard {
     // A unique ID, used for identification on the network
     pub id: ShardID,
@@ -127,7 +155,7 @@ pub struct Shard {
 
 impl Shard {
     // Create a new shard
-    pub fn new(data: Vec<u8>, index: u32) -> Result<Shard, ShardError> {
+    pub fn new(data: Vec<u8>, index: u32) -> Result<Shard, Box<dyn Error>> {
         let (id, timestamp) = ShardID::new(&data)?;
 
         Ok(Shard {
@@ -141,46 +169,45 @@ impl Shard {
 
     // Run various checks to determine if a shard is valid.
     pub fn is_valid(&self) -> bool {
-        // Check the size
-        if self.size != self.data.len() {
-            return false;
-        }
-
-        // Then check ShardID (get timestamp from shard (probably a bad idea))
-
-        true
+        // Check the size and the fileID
+        self.size == self.data.len() && self.id.matches(&self.data, self.timestamp)
     }
 
     /// Given some bytes, split the bytes and return a vector of `Shard`s.
     pub fn shard(
-        bytes: Vec<u8>,
-        options: ShardingOptions,
-    ) -> Result<(Vec<Shard>, ShardConfig), ShardError> {
+        bytes: &Vec<u8>,
+        config: ShardConfig,
+    ) -> Result<(Vec<Shard>, ShardConfig), Box<dyn Error>> {
         // Encrypt the bytes
         let mut b = bytes;
-        if let Some(key) = options.public_key {
-            b = encryption::encrypt_bytes(&key, &b)
-                .map_err(|e| ShardError::CryptoError(e))?;
+        let mut a: Vec<u8> = Vec::new();
+        if config.encrypt {
+            a = encryption::encrypt_bytes(&config.pub_key, &b)?;
+        }
+        // Clean this up, very hacky
+        if a.len() > 0 {
+            b = &a;
         }
 
-        // Shard the (possibly encrypted) bytes and return
-        let sizes = calculate_shard_sizes(b.len(), options.shard_count)?;
-        Ok((
-            split_bytes(&b, &sizes)?,
-            ShardConfig {
-                encryption: options.public_key.is_none(),
-                compression: options.compress,
-                sizes,
-            },
-        ))
+        // Shard the bytes
+        let sizes = calculate_shard_sizes(b.len(), config.shard_count)?;
+        let shards = split_bytes(&b, &sizes)?;
+
+        // Update the config
+        let mut new_config = config.clone();
+        new_config.shard_count = sizes.len();
+        new_config.sizes = sizes;
+
+        Ok((shards, new_config))
     }
 
     /// The inverse operation of `shard`. Extracts and reconstructs the bytes
     /// stored inside the given shards.
     pub fn reconstruct(
         shards: &Vec<Shard>, // Just bytes for now for the same debugging purposes
-        options: ShardingOptions,
-    ) -> Result<Vec<u8>, ShardError> {
+        config: &ShardConfig,
+        private_key: Option<&SecretKey>,
+    ) -> Result<Vec<u8>, Box<dyn Error>> {
         // Reconstruct
         let mut data: Vec<u8> = Vec::new();
         let mut counter = 0;
@@ -193,17 +220,21 @@ impl Shard {
                     data.push(*byte);
                 }
             } else {
-                return Err(ShardError::CannotReconstruct(GeneralError::new(
+                return Err(Box::new(GeneralError::new(
                     "invalid shard; cannot use it to reconstruct",
                 )));
             }
             counter += 1;
         }
 
-        // Decrypt if a key is given
-        if let Some(key) = options.private_key {
-            return encryption::decrypt_bytes(&key, &data)
-                .map_err(|e| ShardError::CryptoError(e));
+        // Decrypt if encrypted
+        if config.encrypt {
+            return match private_key {
+                Some(key) => Ok(encryption::decrypt_bytes(&key, &data).unwrap()),
+                None => Err(Box::new(GeneralError::new(
+                    "private key not given, cannot decrypt shard data",
+                ))),
+            };
         }
         Ok(data)
     }
@@ -214,11 +245,11 @@ impl Shard {
 fn split_bytes(
     bytes: &Vec<u8>,
     sizes: &Vec<usize>,
-) -> Result<Vec<Shard>, ShardError> {
+) -> Result<Vec<Shard>, Box<dyn Error>> {
     // Validate the `sizes` vector
     if sizes.iter().sum::<usize>() != bytes.len() || sizes.contains(&0) {
-        return Err(ShardError::InvalidSplitSizes(GeneralError::new(
-            format!("{:?} is not a valid vector of byte split sizes.", sizes,)
+        return Err(Box::new(GeneralError::new(
+            format!("{:?} is not a valid vector of byte split sizes.", sizes)
                 .as_str(),
         )));
     }
@@ -244,10 +275,10 @@ fn split_bytes(
 fn calculate_shard_sizes(
     n_bytes: usize,
     n_partitions: usize,
-) -> Result<Vec<usize>, ShardError> {
+) -> Result<Vec<usize>, Box<dyn Error>> {
     // Validate the inputs
     if n_bytes == 0 || n_partitions == 0 || n_partitions > n_bytes {
-        return Err(ShardError::NullShardData(GeneralError::new(
+        return Err(Box::new(GeneralError::new(
             "invalid parameters to calculate shard sizes",
         )));
     }
@@ -264,7 +295,7 @@ fn calculate_shard_sizes(
 
     // Before returning, just make sure that everything went well
     if sizes.iter().sum::<usize>() != n_bytes {
-        return Err(ShardError::NullShardData(GeneralError::new(
+        return Err(Box::new(GeneralError::new(
             "unable to calculate shard sizes",
         )));
     }
@@ -295,6 +326,7 @@ impl CanSerialize for Shard {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -311,8 +343,7 @@ mod tests {
 
     #[test]
     fn test_from_bytes() {
-        let serialized =
-            Shard::new(vec![1u8, 10u8], 1).unwrap().to_bytes().unwrap();
+        let serialized = Shard::new(vec![1u8, 10u8], 1).unwrap().to_bytes().unwrap();
         /*
                 let extra_bytes: &[u8] = &[
                     2u8, 5u8, 2u8, 5u8, 2u8, 5u8, 2u8, 5u8, 2u8, 5u8, 2u8, 5u8,
@@ -360,7 +391,7 @@ mod tests {
     fn test_shard_case(my_bytes: Vec<u8>, n_shards: usize) {
         let shards = Shard::shard(
             my_bytes.clone(),
-            ShardingOptions {
+            ShardConfig {
                 shard_count: n_shards,
                 public_key: None,
                 private_key: None,
@@ -414,7 +445,7 @@ mod tests {
 
         let (shards, _) = Shard::shard(
             b.clone(),
-            ShardingOptions {
+            ShardConfig {
                 shard_count,
                 public_key: None,
                 private_key: None,
@@ -425,7 +456,7 @@ mod tests {
 
         let reconstructed = Shard::reconstruct(
             &shards,
-            ShardingOptions {
+            ShardConfig {
                 shard_count,
                 public_key: None,
                 private_key: None,
@@ -460,7 +491,7 @@ mod tests {
         // Shard with encryption
         let (shards, _) = Shard::shard(
             b.clone(),
-            ShardingOptions {
+            ShardConfig {
                 shard_count: sc,
                 // public_key: None,
                 public_key: Some(pub_key),
@@ -473,7 +504,7 @@ mod tests {
         // Reconstruct
         let reconstructed_b = Shard::reconstruct(
             &shards, // The shards themselves
-            ShardingOptions {
+            ShardConfig {
                 shard_count: sc,
                 public_key: None,
                 // private_key: None,
@@ -486,3 +517,4 @@ mod tests {
         assert_eq!(b, reconstructed_b);
     }
 }
+*/
