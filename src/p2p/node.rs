@@ -1,7 +1,7 @@
 use crate::CanSerialize;
 use libp2p::{
     kad::{
-        record::{store::MemoryStore, Key},
+        mut record::{store::MemoryStore, Key},
         Kademlia, KademliaEvent, QueryResult, Quorum, Record,
     },
     mdns::{Mdns, MdnsConfig, MdnsEvent},
@@ -20,7 +20,7 @@ use std::{
 
 use super::identity::Identity;
 use super::store::ShardStore;
-use crate::{common::Stack, primitives::file};
+use crate::{common::Stack, primitives::{file, shard}};
 
 /// The main network behavior for the Meros protocol.
 #[derive(NetworkBehaviour)]
@@ -31,6 +31,25 @@ struct MerosBehavior {
     /// Mdns instance for peer discovery
     mdns: Mdns,
 }
+
+impl MerosBehavior {
+    /// Get a list of the alive peers in the DHT.
+    pub fn get_online_peers(&mut self) -> Vec<PeerId> {
+        let mut nodes: Vec<PeerId> = Vec::new();
+        let buckets = self.kademlia.kbuckets();
+        for bucket in buckets {
+            for node in bucket.iter() {
+                let id = node.to_owned().node.key.into_preimage();
+                if !nodes.contains(&id) {
+                    nodes.push(id);
+                }
+            }
+
+        }
+        nodes
+    }
+}
+
 
 impl NetworkBehaviourEventProcess<MdnsEvent> for MerosBehavior {
     /// Upon an Mdns event
@@ -187,21 +206,6 @@ impl Node {
         let mut listening = false;
         let fut = future::poll_fn(move |cx: &mut Context<'_>| {
             loop {
-                let mut nodes: Vec<PeerId> = Vec::new();
-                {
-                    let buckets = swarm.behaviour_mut().kademlia.kbuckets();
-                    for bucket in buckets {
-                        for node in bucket.iter() {
-                            let id = node.to_owned().node.key.into_preimage();
-                            if !nodes.contains(&id) {
-                                nodes.push(id);
-                            }
-                        }
-
-                    }
-                }
-                println!("{:?}", nodes);
-
                 // If this node has pending operations, execute them
                 match self.pending_ops.pop() {
                     Some(op) => {
@@ -213,7 +217,7 @@ impl Node {
                             } => self.put_file(
                                 //&mut swarm.kademlia,
                                 &mut swarm,
-                                &file_metadata,
+                                file_metadata,
                                 file_bytes.to_vec(),
                                 &config,
                             ),
@@ -231,16 +235,11 @@ impl Node {
                 match swarm.poll_next_unpin(cx) {
                     Poll::Ready(Some(event)) => {
                         match event {
-                            SwarmEvent::ConnectionEstablished {
-                                peer_id, ..
-
-                            } => {
+                            SwarmEvent::ConnectionEstablished { peer_id, .. } => {
                                 println!("peer joined: {:?}", peer_id);
                             }
 
-                            SwarmEvent::ConnectionClosed {
-                                peer_id, ..
-                            } => println!("peer left: {:?}", peer_id),
+                            SwarmEvent::ConnectionClosed { peer_id, .. } => println!("peer left: {:?}", peer_id),
 
                             _ => println!("swarm event: {:?}", event),
                         }
@@ -268,10 +267,10 @@ impl Node {
         &mut self,
         //kad: &mut Kademlia<MemoryStore>,
         swarm: &mut Swarm<MerosBehavior>,
-        file_metadata: &file::File,
+        file_metadata: file::File,
         file_bytes: Vec<u8>,
         config: &OperationConfig,
-    ) {
+    ) -> Result<(), Box<dyn Error>> {
         /*
            1. Find online peers, get their peerIDs, and modify the metadata to
            include the shard locations
@@ -282,6 +281,19 @@ impl Node {
               of the file).
         */
         println!("putting file");
+
+        // (1) Get the online peers
+        let mut peers = swarm.behaviour_mut().get_online_peers();
+        if peers.len() > super::MAX_SHARDS {
+            peers.truncate(super::MAX_SHARDS);
+        }
+
+        // Calcualte the shards of the file and update file sharding metadata accordingly
+        file_metadata.set_shards(peers);
+        let (shards, new_config) =
+            shard::Shard::shard(&file_bytes, file_metadata.shard_config)?;
+
+        file_metadata.shard_config = new_config;
 
         // (2) Insert into the DHT the FileID which points to the relevant metadata.
         let record = Record {
@@ -297,6 +309,8 @@ impl Node {
             .expect("Failed to store the record");
 
         // (3) Then distribute the actual file bytes data across the network.
+
+        Ok(())
     }
 
     /// Core node operation to get a file from the network.

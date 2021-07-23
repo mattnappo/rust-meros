@@ -220,6 +220,12 @@ impl File {
 
         checksum && file_id && signature
     }
+
+    /// Set the numer of shards and shard addresses given a list of PeerIds.
+    pub fn set_shards(&mut self, peers: Vec<libp2p::PeerId>) {
+        self.shard_config.shard_count = peers.len();
+        self.shards = peers.iter().map(|p| p.to_bytes()).collect();
+    }
 }
 
 impl PartialEq for File {
