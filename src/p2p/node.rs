@@ -39,6 +39,7 @@ impl NetworkBehaviourEventProcess<MdnsEvent> for MerosBehavior {
         if let MdnsEvent::Discovered(discovered_peers) = event {
             for (peer_id, multiaddr) in discovered_peers {
                 self.kademlia.add_address(&peer_id, multiaddr);
+                println!("found peer {:?}", peer_id);
             }
         }
     }
@@ -178,23 +179,15 @@ impl Node {
         let mut listening = false;
         let fut = future::poll_fn(move |cx: &mut Context<'_>| {
             loop {
-                // Make sure there are at least 3 nodes online
-                //let netinfo = Swarm::network_info(&swarm);
-                //if netinfo.num_peers() < 2 {
-                //    continue;
-                //}
-                for peer in self.visible_peers.iter() {
-                    println!("peer: {:?}", peer);
-                }
+                {
+                    let buckets = swarm.behaviour_mut().kademlia.kbuckets();
+                    for bucket in buckets {
+                        for node in bucket.iter() {
+                            println!("dht node: {:#?}\n", node.to_owned());
+                        }
 
-                let mut listeners = Swarm::external_addresses(&swarm);
-                for listener in listeners.next() {
-                    println!("listener: {:?}", listener);
+                    }
                 }
-                if listeners.count() < 2 {
-                    continue;
-                }
-
                 // If this node has pending operations, execute them
                 match self.pending_ops.pop() {
                     Some(op) => {
@@ -223,7 +216,6 @@ impl Node {
                 // Then poll the swarm for an event
                 match swarm.poll_next_unpin(cx) {
                     Poll::Ready(Some(event)) => {
-                        println!("swarm event: {:?}", event);
                         match event {
                             SwarmEvent::ConnectionEstablished {
                                 peer_id, ..
@@ -236,7 +228,7 @@ impl Node {
                                 peer_id, ..
                             } => println!("peer left: {:?}", peer_id),
 
-                            _ => println!("swarm event"),
+                            _ => println!("swarm event: {:?}", event),
                         }
                     }
                     Poll::Ready(None) => return Poll::Ready(Ok(())),
@@ -275,15 +267,7 @@ impl Node {
            3. Contact the peers with the shard data (the shards of the actual bytes
               of the file).
         */
-
-        let netinfo = Swarm::network_info(swarm);
-        println!("{:#?}", netinfo);
-
-        let listeners = Swarm::external_addresses(swarm);
-        println!("\n\nlisteners:");
-        for l in listeners {
-            println!("{:#?}", l);
-        }
+        println!("putting file");
 
         // (2) Insert into the DHT the FileID which points to the relevant metadata.
         let record = Record {
