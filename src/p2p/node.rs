@@ -7,7 +7,7 @@ use libp2p::{
     mdns::{Mdns, MdnsConfig, MdnsEvent},
     swarm::NetworkBehaviourEventProcess,
     swarm::SwarmEvent,
-    NetworkBehaviour, PeerId, Swarm,
+    NetworkBehaviour, PeerId, Swarm, Multiaddr,
 };
 
 use async_std::task;
@@ -35,11 +35,19 @@ struct MerosBehavior {
 impl NetworkBehaviourEventProcess<MdnsEvent> for MerosBehavior {
     /// Upon an Mdns event
     fn inject_event(&mut self, event: MdnsEvent) {
-        // Add the discovered peers to the dht
-        if let MdnsEvent::Discovered(discovered_peers) = event {
-            for (peer_id, multiaddr) in discovered_peers {
-                self.kademlia.add_address(&peer_id, multiaddr);
-                println!("found peer {:?}", peer_id);
+        // Add the discovered peers to the dht and remove stale peers
+        match event {
+            MdnsEvent::Discovered(discovered_peers) => {
+                for (peer_id, multiaddr) in discovered_peers {
+                    self.kademlia.add_address(&peer_id, multiaddr);
+                    println!("found peer {:?}", peer_id);
+                }
+            }
+            MdnsEvent::Expired(expired_peers) => {
+                for (peer_id, _) in expired_peers {
+                    self.kademlia.remove_peer(&peer_id);
+                    println!("removed peer {:?}", peer_id);
+                }
             }
         }
     }
@@ -179,15 +187,21 @@ impl Node {
         let mut listening = false;
         let fut = future::poll_fn(move |cx: &mut Context<'_>| {
             loop {
+                let mut nodes: Vec<PeerId> = Vec::new();
                 {
                     let buckets = swarm.behaviour_mut().kademlia.kbuckets();
                     for bucket in buckets {
                         for node in bucket.iter() {
-                            println!("dht node: {:#?}\n", node.to_owned());
+                            let id = node.to_owned().node.key.into_preimage();
+                            if !nodes.contains(&id) {
+                                nodes.push(id);
+                            }
                         }
 
                     }
                 }
+                println!("{:?}", nodes);
+
                 // If this node has pending operations, execute them
                 match self.pending_ops.pop() {
                     Some(op) => {
