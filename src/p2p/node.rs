@@ -6,7 +6,8 @@ use libp2p::{
     },
     mdns::{Mdns, MdnsEvent},
     swarm::NetworkBehaviourEventProcess,
-    NetworkBehaviour, Swarm,
+    swarm::SwarmEvent,
+    NetworkBehaviour, PeerId, Swarm,
 };
 
 use async_std::task;
@@ -39,6 +40,32 @@ impl NetworkBehaviourEventProcess<MdnsEvent> for MerosBehavior {
             for (peer_id, multiaddr) in discovered_peers {
                 self.kademlia.add_address(&peer_id, multiaddr);
             }
+        }
+    }
+}
+
+struct MerosNetError;
+
+impl NetworkBehaviourEventProcess<SwarmEvent<MerosBehavior, MerosNetError>>
+    for MerosBehavior
+{
+    /// Upon a swarm event
+    fn inject_event(&mut self, event: SwarmEvent<MerosBehavior, MerosNetError>) {
+        match event {
+            SwarmEvent::ConnectionEstablished {
+                peer_id,
+                endpoint,
+                num_established,
+            } => println!("peer joined: {:?}", peer_id),
+
+            SwarmEvent::ConnectionClosed {
+                peer_id,
+                endpoint,
+                num_established,
+                cause,
+            } => println!("peer left: {:?}", peer_id),
+
+            _ => println!("swarm event"),
         }
     }
 }
@@ -99,6 +126,8 @@ pub struct Node {
 
     /// This node's list of pending operations.
     pending_ops: Stack<Operation>, // Make Arc<RwLock<>>
+
+    visible_peers: Vec<PeerId>,
 }
 
 /// An operation that a node on the network can perform. This enum will
@@ -143,6 +172,7 @@ impl Node {
             identity: Identity::new(name)?,
             shards: ShardStore::new(name)?,
             pending_ops: Stack::new(),
+            visible_peers: Vec::new(),
         })
     }
 
@@ -155,7 +185,7 @@ impl Node {
     pub fn start_listening(&mut self, port: u16) -> Result<(), Box<dyn Error>> {
         // Build the swarm
         let transport =
-            libp2p::build_tcp_ws_secio_mplex_yamux(self.identity.keypair.clone())?;
+            libp2p::build_tcp_ws_noise_mplex_yamux(self.identity.keypair.clone())?;
 
         let mut swarm = {
             let kademlia = {
@@ -238,6 +268,12 @@ impl Node {
 
         let netinfo = Swarm::network_info(swarm);
         println!("{:#?}", netinfo);
+
+        let listeners = Swarm::external_addresses(swarm);
+        println!("\n\nlisteners:");
+        for l in listeners {
+            println!("{:#?}", l);
+        }
 
         // (2) Insert into the DHT the FileID which points to the relevant metadata.
         let record = Record {

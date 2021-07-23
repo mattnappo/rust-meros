@@ -1,6 +1,6 @@
 use rust_meros::p2p::node::{Node, Operation, OperationConfig};
 use rust_meros::{
-    encryption,
+    crypto::encryption,
     primitives::{file, shard},
 };
 use std::path::Path;
@@ -8,11 +8,16 @@ use std::path::Path;
 /// Create a test operation
 fn get_test_operation() -> Operation {
     let (sk1, pk1) = encryption::gen_keypair("testkey", false).unwrap();
-    let config = shard::ShardConfig::new(5, &pk1);
-    let (mut file, shards) =
-        file::File::new(Path::new("testfile.txt"), config, &sk1).unwrap();
+    let (file, shards) = file::File::new(
+        Path::new("testfile.txt"),
+        shard::ShardConfig::new(5, &pk1),
+        &sk1,
+    )
+    .unwrap();
 
-    let bytes = shard::Shard::reconstruct(&shards, &config, None).unwrap();
+    let bytes =
+        shard::Shard::reconstruct(&shards, &shard::ShardConfig::new(5, &pk1), None)
+            .unwrap();
 
     Operation::PutFile {
         file_metadata: file,
