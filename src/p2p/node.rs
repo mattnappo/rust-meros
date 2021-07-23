@@ -15,6 +15,7 @@ use std::{
 
 use super::identity::Identity;
 use super::store::ShardStore;
+use crate::{common::Stack, primitives::file};
 
 /// The main network behavior for the Meros protocol.
 #[derive(NetworkBehaviour)]
@@ -91,6 +92,42 @@ pub struct Node {
     /// The collection of shards that this node holds. This is a map from
     /// fileIDs to a Vec of shards, using sled db.
     shards: ShardStore, // Make Arc<RwLock<>>
+
+    /// This node's list of pending operations.
+    pending_ops: Stack<Operation>, // Make Arc<RwLock<>>
+}
+
+/// An operation that a node on the network can perform. This enum will
+/// grow as features on the network grow.
+enum Operation {
+    /// Store a file on the network. Also sends the shards to all other nodes.
+    PutFile {
+        file_metadata: file::File,
+        file_bytes: Vec<u8>,
+        config: OperationConfig,
+    },
+
+    /// Poll all the necessary nodes to get a file from the network.
+    GetFile {
+        file_id: file::FileID,
+        config: OperationConfig,
+    },
+}
+
+/// Parameters for a client operation on the network.
+#[derive(Debug)]
+struct OperationConfig {
+    /// Output location for a get file request on the disk
+    pub output_file: String,
+
+    /// Minimum number of nodes that the operation must contact to be valid.
+    pub min_nodes: u16,
+
+    /// Should the output be automatically decompressed.
+    pub decompress: bool,
+
+    /// Should the output be automatically decrypted.
+    pub decrypt: bool,
 }
 
 impl Node {
@@ -101,6 +138,7 @@ impl Node {
         Ok(Node {
             identity: Identity::new(name)?,
             shards: ShardStore::new(name)?,
+            pending_ops: Stack::new(),
         })
     }
 
@@ -129,13 +167,28 @@ impl Node {
         let mut listening = false;
         let fut = future::poll_fn(move |cx: &mut Context<'_>| {
             loop {
-                // First do node stuff (what does the node need to do?)
+                // If this node has pending operations, execute them
+                for op in self.pending_ops.vec().into_iter() {
+                    match op {
+                        Operation::PutFile {
+                            file_metadata,
+                            file_bytes,
+                            config,
+                        } => self.put_file(
+                            &mut swarm.kademlia,
+                            file_metadata,
+                            file_bytes,
+                            config,
+                        ),
+                        Operation::GetFile { file_id, config } => {
+                            self.get_file(&mut swarm.kademlia, file_id, config)
+                        }
+                    }
+                }
 
                 // Then poll the swarm for an event
                 match swarm.poll_next_unpin(cx) {
-                    Poll::Ready(Some(event)) => {
-                        println!("swarm event: {:?}", event)
-                    }
+                    Poll::Ready(Some(event)) => println!("swarm event: {:?}", event),
                     Poll::Ready(None) => return Poll::Ready(Ok(())),
                     Poll::Pending => {
                         if !listening {
@@ -152,5 +205,24 @@ impl Node {
         });
 
         task::block_on(fut)
+    }
+
+    /// Node operation to put a file onto the network.
+    fn put_file(
+        &self,
+        kad: &mut Kademlia<MemoryStore>,
+        file_metadata: &file::File,
+        file_bytes: &Vec<u8>,
+        config: &OperationConfig,
+    ) {
+    }
+
+    /// Node operation to get a file from the network.
+    fn get_file(
+        &self,
+        kad: &mut Kademlia<MemoryStore>,
+        file_id: &file::FileID,
+        config: &OperationConfig,
+    ) {
     }
 }
