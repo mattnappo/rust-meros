@@ -4,7 +4,7 @@ use libp2p::{
         record::{store::MemoryStore, Key},
         Kademlia, KademliaEvent, QueryResult, Quorum, Record,
     },
-    mdns::{Mdns, MdnsEvent},
+    mdns::{Mdns, MdnsConfig, MdnsEvent},
     swarm::NetworkBehaviourEventProcess,
     swarm::SwarmEvent,
     NetworkBehaviour, PeerId, Swarm,
@@ -44,38 +44,12 @@ impl NetworkBehaviourEventProcess<MdnsEvent> for MerosBehavior {
     }
 }
 
-struct MerosNetError;
-
-impl NetworkBehaviourEventProcess<SwarmEvent<MerosBehavior, MerosNetError>>
-    for MerosBehavior
-{
-    /// Upon a swarm event
-    fn inject_event(&mut self, event: SwarmEvent<MerosBehavior, MerosNetError>) {
-        match event {
-            SwarmEvent::ConnectionEstablished {
-                peer_id,
-                endpoint,
-                num_established,
-            } => println!("peer joined: {:?}", peer_id),
-
-            SwarmEvent::ConnectionClosed {
-                peer_id,
-                endpoint,
-                num_established,
-                cause,
-            } => println!("peer left: {:?}", peer_id),
-
-            _ => println!("swarm event"),
-        }
-    }
-}
-
 impl NetworkBehaviourEventProcess<KademliaEvent> for MerosBehavior {
     /// Upon a Kademlia event
     fn inject_event(&mut self, event: KademliaEvent) {
         match event {
             // If the event is a query
-            KademliaEvent::QueryResult { id, result, stats } => {
+            KademliaEvent::OutboundQueryCompleted { result, .. } => {
                 match result {
                     // If the query is a GET
                     QueryResult::GetRecord(Ok(ok)) => {
@@ -182,18 +156,16 @@ impl Node {
     }
 
     /// Start listening on a node
-    pub fn start_listening(&mut self, port: u16) -> Result<(), Box<dyn Error>> {
+    pub async fn start_listening(&mut self, port: u16) -> Result<(), Box<dyn Error>> {
         // Build the swarm
-        let transport =
-            libp2p::build_tcp_ws_noise_mplex_yamux(self.identity.keypair.clone())?;
+        let transport = libp2p::development_transport(self.identity.keypair.clone()).await?;
 
         let mut swarm = {
             let kademlia = {
                 let store = MemoryStore::new(self.identity.peer_id.clone());
                 Kademlia::new(self.identity.peer_id.clone(), store)
             };
-
-            let mdns = Mdns::new()?;
+            let mdns = task::block_on(Mdns::new(MdnsConfig::default()))?;
             let behavior = MerosBehavior { kademlia, mdns };
 
             Swarm::new(transport, behavior, self.identity.peer_id.clone())
@@ -206,29 +178,67 @@ impl Node {
         let mut listening = false;
         let fut = future::poll_fn(move |cx: &mut Context<'_>| {
             loop {
+                // Make sure there are at least 3 nodes online
+                //let netinfo = Swarm::network_info(&swarm);
+                //if netinfo.num_peers() < 2 {
+                //    continue;
+                //}
+                for peer in self.visible_peers.iter() {
+                    println!("peer: {:?}", peer);
+                }
+
+                let mut listeners = Swarm::external_addresses(&swarm);
+                for listener in listeners.next() {
+                    println!("listener: {:?}", listener);
+                }
+                if listeners.count() < 2 {
+                    continue;
+                }
+
                 // If this node has pending operations, execute them
-                for op in self.pending_ops.vec().into_iter() {
-                    match op {
-                        Operation::PutFile {
-                            file_metadata,
-                            file_bytes,
-                            config,
-                        } => self.put_file(
-                            //&mut swarm.kademlia,
-                            &mut swarm,
-                            file_metadata,
-                            file_bytes.to_vec(),
-                            config,
-                        ),
-                        Operation::GetFile { file_id, config } => {
-                            self.get_file(&mut swarm.kademlia, file_id, config)
+                match self.pending_ops.pop() {
+                    Some(op) => {
+                        match op {
+                            Operation::PutFile {
+                                file_metadata,
+                                file_bytes,
+                                config,
+                            } => self.put_file(
+                                //&mut swarm.kademlia,
+                                &mut swarm,
+                                &file_metadata,
+                                file_bytes.to_vec(),
+                                &config,
+                            ),
+                            Operation::GetFile { file_id, config } => self.get_file(
+                                &mut swarm,
+                                &file_id,
+                                &config,
+                            ),
                         }
                     }
+                    None => {}
                 }
 
                 // Then poll the swarm for an event
                 match swarm.poll_next_unpin(cx) {
-                    Poll::Ready(Some(event)) => println!("swarm event: {:?}", event),
+                    Poll::Ready(Some(event)) => {
+                        println!("swarm event: {:?}", event);
+                        match event {
+                            SwarmEvent::ConnectionEstablished {
+                                peer_id, ..
+
+                            } => {
+                                println!("peer joined: {:?}", peer_id);
+                            }
+
+                            SwarmEvent::ConnectionClosed {
+                                peer_id, ..
+                            } => println!("peer left: {:?}", peer_id),
+
+                            _ => println!("swarm event"),
+                        }
+                    }
                     Poll::Ready(None) => return Poll::Ready(Ok(())),
                     Poll::Pending => {
                         if !listening {
@@ -249,7 +259,7 @@ impl Node {
 
     /// Core node operation to put a file onto the network.
     fn put_file(
-        &self,
+        &mut self,
         //kad: &mut Kademlia<MemoryStore>,
         swarm: &mut Swarm<MerosBehavior>,
         file_metadata: &file::File,
@@ -283,6 +293,7 @@ impl Node {
             expires: None,
         };
         swarm
+            .behaviour_mut()
             .kademlia
             .put_record(record, Quorum::One)
             .expect("Failed to store the record");
@@ -292,8 +303,8 @@ impl Node {
 
     /// Core node operation to get a file from the network.
     fn get_file(
-        &self,
-        kad: &mut Kademlia<MemoryStore>,
+        &mut self,
+        swarm: &mut Swarm<MerosBehavior>,
         file_id: &file::FileID,
         config: &OperationConfig,
     ) {

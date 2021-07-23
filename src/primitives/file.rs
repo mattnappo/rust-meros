@@ -152,16 +152,16 @@ impl File {
                 hasher.finalize()
             },
             signature: Vec::new(), // Temporary so that the entire file can be signed
-            owner: PeerId::from_public_key(keypair.public()).into_bytes(),
+            owner: PeerId::from_public_key(keypair.public()).to_bytes(),
             shard_config: new_config,
             shards: Vec::new(), // Empty because the network will handle this part
         };
 
         // Calc digital signature of the file and the file bytes
         let sig_data = [&file.to_bytes()?[..], &file_data[..]].concat().to_vec();
-        println!("sigdata on creation: {:?}", sig_data);
+        //println!("sigdata on creation: {:?}", sig_data);
         file.signature = keypair.sign(&sig_data)?;
-        println!("sig on creation: {:?}", file.signature);
+        //println!("sig on creation: {:?}", file.signature);
 
         Ok((file, shards))
     }

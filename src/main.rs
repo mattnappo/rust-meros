@@ -4,6 +4,8 @@ use rust_meros::{
     primitives::{file, shard},
 };
 use std::path::Path;
+use std::error::Error;
+use async_std;
 
 /// Create a test operation
 fn get_test_operation() -> Operation {
@@ -31,19 +33,22 @@ fn get_test_operation() -> Operation {
     }
 }
 
-fn run_node() {
+/// Run a test node with a test put operation (this will be replaced with a better
+/// interface, CLI or CL flags)
+async fn run_node() -> Result<(), Box<dyn Error>>{
     let args: Vec<String> = std::env::args().collect();
     if args.len() == 3 {
         let mut node = Node::new(args[1].as_str()).unwrap();
 
         node.push_operation(get_test_operation());
 
-        node.start_listening(args[2].parse::<u16>().unwrap())
-            .unwrap();
+        return node.start_listening(args[2].parse::<u16>().unwrap())
+            .await
     }
     panic!("must specify an identity and a port");
 }
 
-fn main() {
-    run_node();
+#[async_std::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    run_node().await
 }
