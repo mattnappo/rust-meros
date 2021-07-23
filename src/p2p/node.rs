@@ -1,5 +1,9 @@
+use crate::CanSerialize;
 use libp2p::{
-    kad::{record::store::MemoryStore, Kademlia, KademliaEvent, QueryResult},
+    kad::{
+        record::{store::MemoryStore, Key},
+        Kademlia, KademliaEvent, QueryResult, Quorum, Record,
+    },
     mdns::{Mdns, MdnsEvent},
     swarm::NetworkBehaviourEventProcess,
     NetworkBehaviour, Swarm,
@@ -99,7 +103,7 @@ pub struct Node {
 
 /// An operation that a node on the network can perform. This enum will
 /// grow as features on the network grow.
-enum Operation {
+pub enum Operation {
     /// Store a file on the network. Also sends the shards to all other nodes.
     PutFile {
         file_metadata: file::File,
@@ -116,7 +120,7 @@ enum Operation {
 
 /// Parameters for a client operation on the network.
 #[derive(Debug)]
-struct OperationConfig {
+pub struct OperationConfig {
     /// Output location for a get file request on the disk
     pub output_file: String,
 
@@ -140,6 +144,11 @@ impl Node {
             shards: ShardStore::new(name)?,
             pending_ops: Stack::new(),
         })
+    }
+
+    /// Push a network operation to this node's stack of operations.
+    pub fn push_operation(&mut self, op: Operation) {
+        self.pending_ops.push(op);
     }
 
     /// Start listening on a node
@@ -175,9 +184,10 @@ impl Node {
                             file_bytes,
                             config,
                         } => self.put_file(
-                            &mut swarm.kademlia,
+                            //&mut swarm.kademlia,
+                            &mut swarm,
                             file_metadata,
-                            file_bytes,
+                            file_bytes.to_vec(),
                             config,
                         ),
                         Operation::GetFile { file_id, config } => {
@@ -207,17 +217,44 @@ impl Node {
         task::block_on(fut)
     }
 
-    /// Node operation to put a file onto the network.
+    /// Core node operation to put a file onto the network.
     fn put_file(
         &self,
-        kad: &mut Kademlia<MemoryStore>,
+        //kad: &mut Kademlia<MemoryStore>,
+        swarm: &mut Swarm<MerosBehavior>,
         file_metadata: &file::File,
-        file_bytes: &Vec<u8>,
+        file_bytes: Vec<u8>,
         config: &OperationConfig,
     ) {
+        /*
+           1. Find online peers, get their peerIDs, and modify the metadata to
+           include the shard locations
+
+           2. Put the metadata into the DHT
+
+           3. Contact the peers with the shard data (the shards of the actual bytes
+              of the file).
+        */
+
+        let netinfo = Swarm::network_info(swarm);
+        println!("{:#?}", netinfo);
+
+        // (2) Insert into the DHT the FileID which points to the relevant metadata.
+        let record = Record {
+            key: Key::new(&file_metadata.id.to_bytes().unwrap()),
+            value: file_metadata.to_bytes().unwrap(),
+            publisher: Some(self.identity.peer_id.clone()),
+            expires: None,
+        };
+        swarm
+            .kademlia
+            .put_record(record, Quorum::One)
+            .expect("Failed to store the record");
+
+        // (3) Then distribute the actual file bytes data across the network.
     }
 
-    /// Node operation to get a file from the network.
+    /// Core node operation to get a file from the network.
     fn get_file(
         &self,
         kad: &mut Kademlia<MemoryStore>,
