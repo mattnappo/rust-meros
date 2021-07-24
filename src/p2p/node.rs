@@ -110,7 +110,7 @@ impl NetworkBehaviourEventProcess<KademliaEvent> for MerosBehavior {
                     QueryResult::GetRecord(Ok(ok)) => {
                         for query in ok.records {
                             println!(
-                                "got record {:?} {:?}",
+                                "KAD EVENT: got record {:?} {:?}",
                                 query.record.key.as_ref(),
                                 &query.record.value
                             );
@@ -123,12 +123,12 @@ impl NetworkBehaviourEventProcess<KademliaEvent> for MerosBehavior {
 
                     // If the query is a PUT
                     QueryResult::PutRecord(Ok(ok)) => {
-                        println!("put record {:?}", ok.key.as_ref());
+                        println!("KAD EVENT: put record {:?}", ok.key.as_ref());
                     }
 
                     // If the query is a failed PUT
                     QueryResult::PutRecord(Err(err)) => {
-                        eprintln!("failed to put record: {:?}", err);
+                        eprintln!("KAD EVENT: failed to put record: {:?}", err);
                     }
 
                     _ => {}
@@ -231,7 +231,11 @@ impl Node {
                 floodsub,
             };
 
-            behavior.floodsub.subscribe(shard_channel.clone());
+            if behavior.floodsub.subscribe(shard_channel.clone()) == true {
+                println!("SUBSCRIBED SUCCESSFULLY");
+            } else {
+                println!("did not subscribe");
+            }
 
             Swarm::new(transport, behavior, self.identity.peer_id.clone())
         };
@@ -317,7 +321,6 @@ impl Node {
            3. Contact the peers with the shard data (the shards of the actual bytes
               of the file).
         */
-        println!("putting file");
 
         // (1) Get the online peers
         let mut peers = swarm.behaviour_mut().get_online_peers();
@@ -340,25 +343,24 @@ impl Node {
 
         // (2) Insert into the DHT the FileID which points to the relevant metadata.
         let record = Record {
-            key: Key::new(&file_metadata.id.to_bytes().unwrap()),
-            value: file_metadata.to_bytes().unwrap(),
+            key: Key::new(&file_metadata.id.to_bytes()?),
+            value: file_metadata.to_bytes()?,
             publisher: Some(self.identity.peer_id.clone()),
             expires: None,
         };
         swarm
             .behaviour_mut()
             .kademlia
-            .put_record(record, Quorum::One)
-            .expect("Failed to store the record");
+            .put_record(record, Quorum::One)?;
 
         // (3) Then distribute the actual file bytes data across the network.
         //for peer in &peers {
         //    swarm.dial(peer)?;
         //}
-        swarm.behaviour_mut().floodsub.publish_any(
-            floodsub::Topic::new(SHARD_CHANNEL),
-            "test message".as_bytes(),
-        );
+        //swarm.behaviour_mut().floodsub.publish_any(
+        //    floodsub::Topic::new(SHARD_CHANNEL),
+        //    "test message".as_bytes(),
+        //);
 
         Ok(())
     }
@@ -367,7 +369,7 @@ impl Node {
         &mut self,
         swarm: &mut Swarm<MerosBehavior>,
     ) -> Result<(), Box<dyn Error>> {
-        println!("testing sub\n\n");
+        println!("testing sub");
         swarm.behaviour_mut().floodsub.publish(
             floodsub::Topic::new(SHARD_CHANNEL),
             "test message".as_bytes(),
@@ -381,6 +383,24 @@ impl Node {
         swarm: &mut Swarm<MerosBehavior>,
         file_id: &file::FileID,
         config: &OperationConfig,
-    ) {
+    ) -> Result<(), Box<dyn Error>> {
+        println!("getting file");
+
+        let qid = swarm
+            .behaviour_mut()
+            .kademlia
+            .get_record(&Key::new(&file_id.to_bytes()?), Quorum::One);
+
+        let query = swarm.behaviour_mut().kademlia.query(&qid);
+        match query {
+            Some(q) => println!(
+                "--------------QUERY:\n{:#?}\n\n{:#?}\n------------",
+                q.info(),
+                q.stats()
+            ),
+            None => println!("QUERY FAILED"),
+        }
+
+        Ok(())
     }
 }
