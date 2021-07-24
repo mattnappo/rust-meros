@@ -1,13 +1,13 @@
 use crate::CanSerialize;
 use libp2p::{
     kad::{
-        mut record::{store::MemoryStore, Key},
+        record::{store::MemoryStore, Key},
         Kademlia, KademliaEvent, QueryResult, Quorum, Record,
     },
     mdns::{Mdns, MdnsConfig, MdnsEvent},
     swarm::NetworkBehaviourEventProcess,
     swarm::SwarmEvent,
-    NetworkBehaviour, PeerId, Swarm, Multiaddr,
+    NetworkBehaviour, PeerId, Swarm,
 };
 
 use async_std::task;
@@ -16,11 +16,12 @@ use std::{
     error::Error,
     str::from_utf8,
     task::{Context, Poll},
+    clone::Clone,
 };
 
 use super::identity::Identity;
 use super::store::ShardStore;
-use crate::{common::Stack, primitives::{file, shard}};
+use crate::{GeneralError, primitives::{file, shard}};
 
 /// The main network behavior for the Meros protocol.
 #[derive(NetworkBehaviour)]
@@ -127,13 +128,12 @@ pub struct Node {
     shards: ShardStore, // Make Arc<RwLock<>>
 
     /// This node's list of pending operations.
-    pending_ops: Stack<Operation>, // Make Arc<RwLock<>>
-
-    visible_peers: Vec<PeerId>,
+    pending_ops: Vec<Operation>, // Make Arc<RwLock<>>
 }
 
 /// An operation that a node on the network can perform. This enum will
 /// grow as features on the network grow.
+#[derive(Clone)]
 pub enum Operation {
     /// Store a file on the network. Also sends the shards to all other nodes.
     PutFile {
@@ -150,7 +150,7 @@ pub enum Operation {
 }
 
 /// Parameters for a client operation on the network.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OperationConfig {
     /// Output location for a get file request on the disk
     pub output_file: String,
@@ -173,8 +173,7 @@ impl Node {
         Ok(Node {
             identity: Identity::new(name)?,
             shards: ShardStore::new(name)?,
-            pending_ops: Stack::new(),
-            visible_peers: Vec::new(),
+            pending_ops: Vec::new(),
         })
     }
 
@@ -206,30 +205,31 @@ impl Node {
         let mut listening = false;
         let fut = future::poll_fn(move |cx: &mut Context<'_>| {
             loop {
-                // If this node has pending operations, execute them
-                match self.pending_ops.pop() {
-                    Some(op) => {
-                        match op {
-                            Operation::PutFile {
-                                file_metadata,
-                                file_bytes,
-                                config,
-                            } => self.put_file(
-                                //&mut swarm.kademlia,
-                                &mut swarm,
-                                file_metadata,
-                                file_bytes.to_vec(),
-                                &config,
-                            ),
-                            Operation::GetFile { file_id, config } => self.get_file(
-                                &mut swarm,
-                                &file_id,
-                                &config,
-                            ),
-                        }
-                    }
-                    None => {}
+                /*
+                let peers = swarm.behaviour_mut().get_online_peers();
+                if peers.len() == 0 {
+                    println!("0 peers");
+                    continue;
                 }
+                */
+
+                if self.pending_ops.len() != 0 {
+                    // If this node has pending operations, execute them
+                    match self.pending_ops[0].clone() {
+                        Operation::PutFile {
+                            file_metadata,
+                            file_bytes,
+                            config,
+                        } => self.put_file(
+                            &mut swarm,
+                            file_metadata,
+                            file_bytes.to_vec(),
+                            &config,
+                        )?,
+                        _ => {}
+                    }
+                }
+
 
                 // Then poll the swarm for an event
                 match swarm.poll_next_unpin(cx) {
@@ -265,9 +265,8 @@ impl Node {
     /// Core node operation to put a file onto the network.
     fn put_file(
         &mut self,
-        //kad: &mut Kademlia<MemoryStore>,
         swarm: &mut Swarm<MerosBehavior>,
-        file_metadata: file::File,
+        mut file_metadata: file::File,
         file_bytes: Vec<u8>,
         config: &OperationConfig,
     ) -> Result<(), Box<dyn Error>> {
@@ -286,6 +285,12 @@ impl Node {
         let mut peers = swarm.behaviour_mut().get_online_peers();
         if peers.len() > super::MAX_SHARDS {
             peers.truncate(super::MAX_SHARDS);
+        }
+        
+        if peers.len() == 0 {
+            println!("not enough peers to shard file");
+            return Ok(());
+            //return Err(Box::new(GeneralError::new("not enough peers to shard file")));
         }
 
         // Calcualte the shards of the file and update file sharding metadata accordingly

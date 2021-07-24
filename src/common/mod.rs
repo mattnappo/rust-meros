@@ -24,7 +24,7 @@ impl<T> Stack<T> {
         self.0.pop()
     }
 
-    /// View the internal vector as a reference.
+    // View the internal vector as a reference.
     pub fn vec(&self) -> &Vec<T> {
         &self.0
     }

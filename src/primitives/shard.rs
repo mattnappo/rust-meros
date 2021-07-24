@@ -278,6 +278,7 @@ fn calculate_shard_sizes(
 ) -> Result<Vec<usize>, Box<dyn Error>> {
     // Validate the inputs
     if n_bytes == 0 || n_partitions == 0 || n_partitions > n_bytes {
+        println!("n bytes: {}, n partitions: {}", n_bytes, n_partitions);
         return Err(Box::new(GeneralError::new(
             "invalid parameters to calculate shard sizes",
         )));

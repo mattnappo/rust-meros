@@ -37,10 +37,12 @@ fn get_test_operation() -> Operation {
 /// interface, CLI or CL flags)
 async fn run_node() -> Result<(), Box<dyn Error>>{
     let args: Vec<String> = std::env::args().collect();
-    if args.len() == 3 {
+    if args.len() >= 3 {
         let mut node = Node::new(args[1].as_str()).unwrap();
 
-        node.push_operation(get_test_operation());
+        if args.len() == 4 && args[3] == "test-put" {
+            node.push_operation(get_test_operation());
+        }
 
         return node.start_listening(args[2].parse::<u16>().unwrap())
             .await

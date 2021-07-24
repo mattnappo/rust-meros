@@ -6,6 +6,7 @@ use crc32fast::Hasher;
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
 use std::{
+    clone::Clone,
     cmp::PartialEq,
     error::Error,
     fs,
@@ -17,7 +18,7 @@ use std::{
 
 /// The structure used for the identification of a file on the meros
 /// network.
-#[derive(Debug, Serialize, Deserialize, Hash)]
+#[derive(Debug, Serialize, Deserialize, Hash, Clone)]
 pub struct FileID {
     id: hash::Hash,
 }
@@ -73,7 +74,7 @@ type PeerIdSerial = Vec<u8>;
 /// contains valuable information about a file, but does not contain the data
 /// of the file. Rather, that data is stored among the nodes described in the
 /// `shards` field.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct File {
     /// The name of the file
     pub filename: String,
