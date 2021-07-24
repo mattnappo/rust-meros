@@ -1,26 +1,32 @@
 use crate::CanSerialize;
 use libp2p::{
+    floodsub::{self, Floodsub, FloodsubEvent},
     kad::{
         record::{store::MemoryStore, Key},
         Kademlia, KademliaEvent, QueryResult, Quorum, Record,
     },
     mdns::{Mdns, MdnsConfig, MdnsEvent},
-    swarm::NetworkBehaviourEventProcess,
-    swarm::SwarmEvent,
+    swarm::{NetworkBehaviourEventProcess, SwarmEvent},
     NetworkBehaviour, PeerId, Swarm,
 };
 
 use async_std::task;
 use futures::prelude::*;
 use std::{
+    clone::Clone,
     error::Error,
     task::{Context, Poll},
-    clone::Clone,
 };
 
 use super::identity::Identity;
 use super::store::ShardStore;
-use crate::{GeneralError, primitives::{file, shard}};
+use crate::{
+    primitives::{file, shard},
+    GeneralError,
+};
+
+/// The floodsub topic string where shards are exchanged.
+const SHARD_CHANNEL: &str = "shard_channel";
 
 /// The main network behavior for the Meros protocol.
 #[derive(NetworkBehaviour)]
@@ -30,6 +36,9 @@ struct MerosBehavior {
 
     /// Mdns instance for peer discovery
     mdns: Mdns,
+
+    /// Floodsub for communicating shard data
+    floodsub: Floodsub,
 }
 
 impl MerosBehavior {
@@ -44,12 +53,10 @@ impl MerosBehavior {
                     nodes.push(id);
                 }
             }
-
         }
         nodes
     }
 }
-
 
 impl NetworkBehaviourEventProcess<MdnsEvent> for MerosBehavior {
     /// Upon an Mdns event
@@ -59,16 +66,36 @@ impl NetworkBehaviourEventProcess<MdnsEvent> for MerosBehavior {
             MdnsEvent::Discovered(discovered_peers) => {
                 for (peer_id, multiaddr) in discovered_peers {
                     self.kademlia.add_address(&peer_id, multiaddr);
+                    self.floodsub.add_node_to_partial_view(peer_id);
                     println!("found peer {:?}", peer_id);
                 }
             }
             MdnsEvent::Expired(expired_peers) => {
                 for (peer_id, _) in expired_peers {
                     self.kademlia.remove_peer(&peer_id);
+                    if !self.mdns.has_node(&peer_id) {
+                        self.floodsub.remove_node_from_partial_view(&peer_id);
+                    }
                     println!("removed peer {:?}", peer_id);
                 }
             }
         }
+    }
+}
+
+impl NetworkBehaviourEventProcess<FloodsubEvent> for MerosBehavior {
+    /// Upon a floodsub event
+    fn inject_event(&mut self, event: FloodsubEvent) {
+        match event {
+            FloodsubEvent::Message(msg) => {
+                println!(
+                    "\n=========\nreceived msg: {:?} from {:?}\n========\n",
+                    String::from_utf8_lossy(&msg.data),
+                    msg.source
+                );
+            }
+            _ => println!("FLOODSUB EVENT: {:?}", event),
+        };
     }
 }
 
@@ -89,7 +116,6 @@ impl NetworkBehaviourEventProcess<KademliaEvent> for MerosBehavior {
                             );
                         }
                     }
-
                     // If the query is a failed GET
                     QueryResult::GetRecord(Err(err)) => {
                         eprintln!("failed to get record: {:?}", err);
@@ -97,10 +123,7 @@ impl NetworkBehaviourEventProcess<KademliaEvent> for MerosBehavior {
 
                     // If the query is a PUT
                     QueryResult::PutRecord(Ok(ok)) => {
-                        println!(
-                            "put record {:?}",
-                            ok.key.as_ref()
-                        );
+                        println!("put record {:?}", ok.key.as_ref());
                     }
 
                     // If the query is a failed PUT
@@ -146,6 +169,9 @@ pub enum Operation {
         file_id: file::FileID,
         config: OperationConfig,
     },
+
+    /// Send a test floodsub msg.
+    TestSub,
 }
 
 /// Parameters for a client operation on the network.
@@ -182,9 +208,15 @@ impl Node {
     }
 
     /// Start listening on a node
-    pub async fn start_listening(&mut self, port: u16) -> Result<(), Box<dyn Error>> {
+    pub async fn start_listening(
+        &mut self,
+        port: u16,
+    ) -> Result<(), Box<dyn Error>> {
         // Build the swarm
-        let transport = libp2p::development_transport(self.identity.keypair.clone()).await?;
+        let transport =
+            libp2p::development_transport(self.identity.keypair.clone()).await?;
+
+        let shard_channel = floodsub::Topic::new(SHARD_CHANNEL);
 
         let mut swarm = {
             let kademlia = {
@@ -192,7 +224,14 @@ impl Node {
                 Kademlia::new(self.identity.peer_id.clone(), store)
             };
             let mdns = task::block_on(Mdns::new(MdnsConfig::default()))?;
-            let behavior = MerosBehavior { kademlia, mdns };
+            let floodsub = Floodsub::new(self.identity.peer_id.clone());
+            let mut behavior = MerosBehavior {
+                kademlia,
+                mdns,
+                floodsub,
+            };
+
+            behavior.floodsub.subscribe(shard_channel.clone());
 
             Swarm::new(transport, behavior, self.identity.peer_id.clone())
         };
@@ -204,52 +243,45 @@ impl Node {
         let mut listening = false;
         let fut = future::poll_fn(move |cx: &mut Context<'_>| {
             loop {
-                /*
-                let peers = swarm.behaviour_mut().get_online_peers();
-                if peers.len() == 0 {
-                    println!("0 peers");
-                    continue;
-                }
-                */
-
+                // If this node has pending operations, execute them
                 if self.pending_ops.len() != 0 {
-                    // If this node has pending operations, execute them
-                    match self.pending_ops[0].clone() {
+                    let result = match self.pending_ops[0].clone() {
                         Operation::PutFile {
                             file_metadata,
                             file_bytes,
                             config,
-                        } => match self.put_file(
+                        } => self.put_file(
                             &mut swarm,
                             file_metadata,
                             file_bytes.to_vec(),
                             &config,
-                        ) {
-                            Ok(_) => {
-                                println!("successfully put file");
-                                self.pending_ops.remove(0);
-                            },
-                            Err(e) => println!("error putting file: {:?}", e),
+                        ),
+                        Operation::TestSub => self.test_sub(&mut swarm),
+                        _ => Ok(()),
+                    };
 
-                        },
-                        _ => {}
+                    match result {
+                        Ok(_) => {
+                            println!("successfully executed operation");
+                            self.pending_ops.remove(0);
+                        }
+                        Err(e) => println!("error executing operation: {:?}", e),
                     }
                 }
 
-
                 // Then poll the swarm for an event
                 match swarm.poll_next_unpin(cx) {
-                    Poll::Ready(Some(event)) => {
-                        match event {
-                            SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-                                println!("peer joined: {:?}", peer_id);
-                            }
-
-                            SwarmEvent::ConnectionClosed { peer_id, .. } => println!("peer left: {:?}", peer_id),
-
-                            _ => println!("swarm event: {:?}", event),
+                    Poll::Ready(Some(event)) => match event {
+                        SwarmEvent::ConnectionEstablished { peer_id, .. } => {
+                            println!("peer joined: {:?}", peer_id);
                         }
-                    }
+
+                        SwarmEvent::ConnectionClosed { peer_id, .. } => {
+                            println!("peer left: {:?}", peer_id)
+                        }
+
+                        _ => println!("swarm event: {:?}", event),
+                    },
                     Poll::Ready(None) => return Poll::Ready(Ok(())),
                     Poll::Pending => {
                         if !listening {
@@ -274,7 +306,7 @@ impl Node {
         swarm: &mut Swarm<MerosBehavior>,
         mut file_metadata: file::File,
         file_bytes: Vec<u8>,
-        config: &OperationConfig,
+        _: &OperationConfig,
     ) -> Result<(), Box<dyn Error>> {
         /*
            1. Find online peers, get their peerIDs, and modify the metadata to
@@ -292,13 +324,15 @@ impl Node {
         if peers.len() > super::MAX_SHARDS {
             peers.truncate(super::MAX_SHARDS);
         }
-        
+
         if peers.len() == 0 {
-            return Err(Box::new(GeneralError::new("not enough peers to shard file")));
+            return Err(Box::new(GeneralError::new(
+                "not enough peers to shard file",
+            )));
         }
 
         // Calcualte the shards of the file and update file sharding metadata accordingly
-        file_metadata.set_shards(peers);
+        file_metadata.set_shards(&peers);
         let (shards, new_config) =
             shard::Shard::shard(&file_bytes, file_metadata.shard_config)?;
 
@@ -318,7 +352,26 @@ impl Node {
             .expect("Failed to store the record");
 
         // (3) Then distribute the actual file bytes data across the network.
+        //for peer in &peers {
+        //    swarm.dial(peer)?;
+        //}
+        swarm.behaviour_mut().floodsub.publish_any(
+            floodsub::Topic::new(SHARD_CHANNEL),
+            "test message".as_bytes(),
+        );
 
+        Ok(())
+    }
+
+    fn test_sub(
+        &mut self,
+        swarm: &mut Swarm<MerosBehavior>,
+    ) -> Result<(), Box<dyn Error>> {
+        println!("testing sub\n\n");
+        swarm.behaviour_mut().floodsub.publish(
+            floodsub::Topic::new(SHARD_CHANNEL),
+            "test message".as_bytes(),
+        );
         Ok(())
     }
 

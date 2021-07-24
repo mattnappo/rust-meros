@@ -1,11 +1,11 @@
+use async_std;
 use rust_meros::p2p::node::{Node, Operation, OperationConfig};
 use rust_meros::{
     crypto::encryption,
     primitives::{file, shard},
 };
-use std::path::Path;
 use std::error::Error;
-use async_std;
+use std::path::Path;
 
 /// Create a test operation
 fn get_test_operation() -> Operation {
@@ -35,7 +35,7 @@ fn get_test_operation() -> Operation {
 
 /// Run a test node with a test put operation (this will be replaced with a better
 /// interface, CLI or CL flags)
-async fn run_node() -> Result<(), Box<dyn Error>>{
+async fn run_node() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() >= 3 {
         let mut node = Node::new(args[1].as_str()).unwrap();
@@ -43,9 +43,11 @@ async fn run_node() -> Result<(), Box<dyn Error>>{
         if args.len() == 4 && args[3] == "test-put" {
             node.push_operation(get_test_operation());
         }
+        if args.len() == 4 && args[3] == "test-sub" {
+            node.push_operation(Operation::TestSub);
+        }
 
-        return node.start_listening(args[2].parse::<u16>().unwrap())
-            .await
+        return node.start_listening(args[2].parse::<u16>().unwrap()).await;
     }
     panic!("must specify an identity and a port");
 }
