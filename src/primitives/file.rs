@@ -227,6 +227,11 @@ impl File {
         self.shard_config.shard_count = peers.len();
         self.shards = peers.iter().map(|p| p.to_bytes()).collect();
     }
+
+    /// Read the shards of this file as a reference.
+    pub fn shards(&self) -> &Vec<PeerIdSerial> {
+        &self.shards
+    }
 }
 
 impl PartialEq for File {

@@ -1,0 +1,4 @@
+it is 1 of 2 problems
+
+1: My operation dispatcher/executor is broken (the stack/vec of operations is removing things too quickly)
+2: I am putting code where it shouldn't be. should it be in the behavior? an event? impl somewhere? etc...

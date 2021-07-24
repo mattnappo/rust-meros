@@ -73,9 +73,7 @@ impl NetworkBehaviourEventProcess<MdnsEvent> for MerosBehavior {
             MdnsEvent::Expired(expired_peers) => {
                 for (peer_id, _) in expired_peers {
                     self.kademlia.remove_peer(&peer_id);
-                    if !self.mdns.has_node(&peer_id) {
-                        self.floodsub.remove_node_from_partial_view(&peer_id);
-                    }
+                    self.floodsub.remove_node_from_partial_view(&peer_id);
                     println!("removed peer {:?}", peer_id);
                 }
             }
@@ -114,6 +112,14 @@ impl NetworkBehaviourEventProcess<KademliaEvent> for MerosBehavior {
                                 query.record.key.as_ref(),
                                 &query.record.value
                             );
+
+                            let f = file::File::from_bytes(query.record.value)
+                                .expect("corrupted file::File bytes from store");
+
+                            println!("file: {:#?}", f);
+
+                            let read_node = PeerId::from_bytes(&f.shards()[0]).unwrap();
+                            println!("shard node: {:?}", read_node);
                         }
                     }
                     // If the query is a failed GET
@@ -260,6 +266,10 @@ impl Node {
                             file_bytes.to_vec(),
                             &config,
                         ),
+                        Operation::GetFile {
+                            file_id,
+                            config,
+                        } => self.get_file(&mut swarm, &file_id, &config),
                         Operation::TestSub => self.test_sub(&mut swarm),
                         _ => Ok(()),
                     };
@@ -351,7 +361,8 @@ impl Node {
         swarm
             .behaviour_mut()
             .kademlia
-            .put_record(record, Quorum::One)?;
+            .put_record(record, Quorum::One)
+            .unwrap();
 
         // (3) Then distribute the actual file bytes data across the network.
         //for peer in &peers {
@@ -400,6 +411,10 @@ impl Node {
             ),
             None => println!("QUERY FAILED"),
         }
+        swarm.behaviour_mut().floodsub.publish_any(
+            floodsub::Topic::new(SHARD_CHANNEL),
+            "awesome postget message".as_bytes(),
+        );
 
         Ok(())
     }
