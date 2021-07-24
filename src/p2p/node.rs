@@ -14,7 +14,6 @@ use async_std::task;
 use futures::prelude::*;
 use std::{
     error::Error,
-    str::from_utf8,
     task::{Context, Poll},
     clone::Clone,
 };
@@ -85,8 +84,8 @@ impl NetworkBehaviourEventProcess<KademliaEvent> for MerosBehavior {
                         for query in ok.records {
                             println!(
                                 "got record {:?} {:?}",
-                                from_utf8(query.record.key.as_ref()).unwrap(),
-                                from_utf8(&query.record.value).unwrap()
+                                query.record.key.as_ref(),
+                                &query.record.value
                             );
                         }
                     }
@@ -100,7 +99,7 @@ impl NetworkBehaviourEventProcess<KademliaEvent> for MerosBehavior {
                     QueryResult::PutRecord(Ok(ok)) => {
                         println!(
                             "put record {:?}",
-                            from_utf8(ok.key.as_ref()).unwrap()
+                            ok.key.as_ref()
                         );
                     }
 
@@ -220,12 +219,19 @@ impl Node {
                             file_metadata,
                             file_bytes,
                             config,
-                        } => self.put_file(
+                        } => match self.put_file(
                             &mut swarm,
                             file_metadata,
                             file_bytes.to_vec(),
                             &config,
-                        )?,
+                        ) {
+                            Ok(_) => {
+                                println!("successfully put file");
+                                self.pending_ops.remove(0);
+                            },
+                            Err(e) => println!("error putting file: {:?}", e),
+
+                        },
                         _ => {}
                     }
                 }
@@ -288,9 +294,7 @@ impl Node {
         }
         
         if peers.len() == 0 {
-            println!("not enough peers to shard file");
-            return Ok(());
-            //return Err(Box::new(GeneralError::new("not enough peers to shard file")));
+            return Err(Box::new(GeneralError::new("not enough peers to shard file")));
         }
 
         // Calcualte the shards of the file and update file sharding metadata accordingly
