@@ -1,11 +1,18 @@
-use libp2p::kad::{
-    record::{store::MemoryStore, Key},
-    Kademlia, Quorum, Record,
+use libp2p::{
+    floodsub,
+    kad::{
+        record::{store::MemoryStore, Key},
+        Kademlia, Quorum, Record,
+    },
 };
 
 // This is what drives the client. When a client wants to publish a file, it
 // will do this (mainly the kademlia.get_record and kademlia.put_record)
-pub fn handle_stdin_line(kademlia: &mut Kademlia<MemoryStore>, line: String) {
+pub fn handle_stdin_line(
+    kademlia: &mut Kademlia<MemoryStore>,
+    floodsub: &mut floodsub::Floodsub,
+    line: String,
+) {
     let mut args = line.split(" ");
     match args.next() {
         Some("GET") => {
@@ -46,6 +53,11 @@ pub fn handle_stdin_line(kademlia: &mut Kademlia<MemoryStore>, line: String) {
             kademlia
                 .put_record(record, Quorum::One)
                 .expect("Failed to store record locally");
+
+            floodsub.publish(
+                floodsub::Topic::new(super::node::SHARD_CHANNEL),
+                "published a record via stdin".as_bytes(),
+            );
         }
         _ => {
             eprintln!("Expected GET or PUT");

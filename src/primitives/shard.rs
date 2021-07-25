@@ -2,6 +2,7 @@ use crate::{
     crypto::{encryption, hash, hash::HASH_SIZE},
     CanSerialize, GeneralError,
 };
+
 use ecies_ed25519::{PublicKey, SecretKey};
 use math::round::floor;
 use serde::{Deserialize, Serialize};

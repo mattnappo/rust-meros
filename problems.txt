@@ -2,3 +2,11 @@ it is 1 of 2 problems
 
 1: My operation dispatcher/executor is broken (the stack/vec of operations is removing things too quickly)
 2: I am putting code where it shouldn't be. should it be in the behavior? an event? impl somewhere? etc...
+
+There seems to just be some sort of issue with the floodsub stuff. Maybe upgrade to gossipsub to be able to get those error messages / status on the messages sent.
+
+goal for when i wake up: just try to get the floobsub working. try to get a singular message to send. why did it work that one time when it almost crashed my pc?
+
+maybe play around with the floodsub chat program and see what the effect of removing the dialing part does?
+
+also jsut read thru the example source side by side and make sure im not just being dumb at pattern matching (copying the code)

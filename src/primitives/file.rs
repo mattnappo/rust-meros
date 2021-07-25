@@ -9,9 +9,11 @@ use std::{
     clone::Clone,
     cmp::PartialEq,
     error::Error,
+    fmt::Write,
     fs,
     hash::Hash,
     io::prelude::*,
+    num::ParseIntError,
     path,
     time::{SystemTime, SystemTimeError, UNIX_EPOCH},
 };
@@ -48,6 +50,37 @@ impl FileID {
             .to_vec();
 
         true
+    }
+
+    /// Convert to a hex string
+    pub fn to_hex(&self) -> String {
+        self.id.map(|b| format!("{:x}", b)).concat()
+    }
+
+    /// Peek at the internal hash
+    pub(super) fn id(&self) -> &hash::Hash {
+        &self.id
+    }
+
+    /// Convert from a hex string
+    pub fn from_hex(s: &str) -> Result<Self, Box<dyn Error>> {
+        let b: Vec<u8> = (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect();
+
+        if b.len() > crypto::hash::HASH_SIZE {
+            return Err(Box::new(GeneralError::new(
+                "invalid hex FileID to construct FileID",
+            )));
+        }
+
+        let mut id = [0u8; 32];
+        for (i, byte) in b.into_iter().enumerate() {
+            id[i] = byte;
+        }
+
+        Ok(Self { id })
     }
 }
 
@@ -285,5 +318,20 @@ mod tests {
         assert_eq!(file2.is_valid(&shards1, None), false);
         assert_eq!(file1.is_valid(&shards2, None), false);
         */
+    }
+
+    #[test]
+    fn hex() {
+        let (fid, _) = FileID::new("filename", &vec![1u8, 2u8, 3u8]).unwrap();
+
+        let fid_string = fid.to_hex();
+
+        println!("fid string: {}", fid_string);
+
+        let new_fid = FileID::from_hex(fid_string.as_str()).unwrap();
+
+        println!("deserialized fid: {:?}", new_fid);
+
+        assert!(fid == new_fid);
     }
 }

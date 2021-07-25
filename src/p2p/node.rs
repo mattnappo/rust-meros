@@ -10,7 +10,7 @@ use libp2p::{
     NetworkBehaviour, PeerId, Swarm,
 };
 
-use async_std::task;
+use async_std::{io, task};
 use futures::prelude::*;
 use std::{
     clone::Clone,
@@ -25,8 +25,8 @@ use crate::{
     GeneralError,
 };
 
-/// The floodsub topic string where shards are exchanged.
-const SHARD_CHANNEL: &str = "shard_channel";
+/// The floodsub topic string where shards are exchanged
+pub(super) const SHARD_CHANNEL: &str = "shard_channel";
 
 /// The main network behavior for the Meros protocol.
 #[derive(NetworkBehaviour)]
@@ -55,6 +55,12 @@ impl MerosBehavior {
             }
         }
         nodes
+    }
+
+    /// Say hi
+    pub fn hi(&mut self) {
+        self.floodsub
+            .publish(floodsub::Topic::new(SHARD_CHANNEL), "hi".as_bytes());
     }
 }
 
@@ -91,6 +97,8 @@ impl NetworkBehaviourEventProcess<FloodsubEvent> for MerosBehavior {
                     String::from_utf8_lossy(&msg.data),
                     msg.source
                 );
+
+                //std::process::Command::new("brave").output().expect("err"); // lolll
             }
             _ => println!("FLOODSUB EVENT: {:?}", event),
         };
@@ -116,9 +124,13 @@ impl NetworkBehaviourEventProcess<KademliaEvent> for MerosBehavior {
                             let f = file::File::from_bytes(query.record.value)
                                 .expect("corrupted file::File bytes from store");
 
-                            println!("file: {:#?}", f);
+                            println!("file: {:?}", f);
 
-                            let read_node = PeerId::from_bytes(&f.shards()[0]).unwrap();
+                            let read_node =
+                                PeerId::from_bytes(&f.shards()[0]).unwrap();
+
+                            self.hi();
+
                             println!("shard node: {:?}", read_node);
                         }
                     }
@@ -129,7 +141,11 @@ impl NetworkBehaviourEventProcess<KademliaEvent> for MerosBehavior {
 
                     // If the query is a PUT
                     QueryResult::PutRecord(Ok(ok)) => {
-                        println!("KAD EVENT: put record {:?}", ok.key.as_ref());
+                        println!(
+                            "KAD EVENT: put record {:?}",
+                            file::FileID::from_bytes(ok.key.as_ref().into())
+                                .expect("corrupted fileid")
+                        );
                     }
 
                     // If the query is a failed PUT
@@ -246,13 +262,22 @@ impl Node {
             Swarm::new(transport, behavior, self.identity.peer_id.clone())
         };
 
+        let mut stdin = io::BufReader::new(io::stdin()).lines();
+
         // Start listening on this node
         Swarm::listen_on(&mut swarm, format!("/ip4/0.0.0.0/tcp/{}", port).parse()?)?;
 
         // Construct the future for handling lines from stdin
         let mut listening = false;
+        let mut hi = false;
         let fut = future::poll_fn(move |cx: &mut Context<'_>| {
             loop {
+                if hi == false {
+                    swarm.behaviour_mut().hi();
+                    println!("\n\n SAYING HI \n\n");
+                    hi = true;
+                }
+
                 // If this node has pending operations, execute them
                 if self.pending_ops.len() != 0 {
                     let result = match self.pending_ops[0].clone() {
@@ -266,10 +291,9 @@ impl Node {
                             file_bytes.to_vec(),
                             &config,
                         ),
-                        Operation::GetFile {
-                            file_id,
-                            config,
-                        } => self.get_file(&mut swarm, &file_id, &config),
+                        Operation::GetFile { file_id, config } => {
+                            self.get_file(&mut swarm, &file_id, &config)
+                        }
                         Operation::TestSub => self.test_sub(&mut swarm),
                         _ => Ok(()),
                     };
@@ -282,6 +306,24 @@ impl Node {
                         Err(e) => println!("error executing operation: {:?}", e),
                     }
                 }
+
+                /* testing with just stdin for sanity */
+                loop {
+                    match stdin.try_poll_next_unpin(cx)? {
+                        Poll::Ready(Some(line)) => {
+                            let sb = swarm.behaviour_mut();
+                            super::handler::handle_stdin_line(
+                                &mut sb.kademlia,
+                                &mut sb.floodsub,
+                                line,
+                            )
+                        }
+                        Poll::Ready(None) => println!("stdin broken"),
+                        Poll::Pending => break,
+                    }
+                }
+
+                /* --- This can be left alone --- */
 
                 // Then poll the swarm for an event
                 match swarm.poll_next_unpin(cx) {
@@ -368,10 +410,11 @@ impl Node {
         //for peer in &peers {
         //    swarm.dial(peer)?;
         //}
-        //swarm.behaviour_mut().floodsub.publish_any(
-        //    floodsub::Topic::new(SHARD_CHANNEL),
-        //    "test message".as_bytes(),
-        //);
+        swarm.behaviour_mut().floodsub.publish(
+            floodsub::Topic::new(SHARD_CHANNEL),
+            "just put file".as_bytes(),
+        );
+        println!("end of put file");
 
         Ok(())
     }
@@ -381,10 +424,16 @@ impl Node {
         swarm: &mut Swarm<MerosBehavior>,
     ) -> Result<(), Box<dyn Error>> {
         println!("testing sub");
-        swarm.behaviour_mut().floodsub.publish(
-            floodsub::Topic::new(SHARD_CHANNEL),
-            "test message".as_bytes(),
-        );
+
+        let mut c = 0;
+        for _ in 0..10 {
+            println!("trial {}", c);
+            swarm.behaviour_mut().floodsub.publish(
+                floodsub::Topic::new(SHARD_CHANNEL),
+                "test message".as_bytes(),
+            );
+            c += 1;
+        }
         Ok(())
     }
 
@@ -403,15 +452,24 @@ impl Node {
             .get_record(&Key::new(&file_id.to_bytes()?), Quorum::One);
 
         let query = swarm.behaviour_mut().kademlia.query(&qid);
-        match query {
-            Some(q) => println!(
+        if let Some(q) = query {
+            println!(
                 "--------------QUERY:\n{:#?}\n\n{:#?}\n------------",
                 q.info(),
-                q.stats()
-            ),
-            None => println!("QUERY FAILED"),
+                q.stats(),
+            );
         }
-        swarm.behaviour_mut().floodsub.publish_any(
+
+        let nodes = swarm.behaviour_mut().get_online_peers();
+        println!("\nONLINE NODES: {:?}\n", nodes);
+        for node in nodes {
+            match swarm.dial(&node) {
+                Ok(_) => println!("dialed {:?}", node),
+                Err(e) => println!("failed to dial {:?}: {:?}", node, e),
+            }
+        }
+
+        swarm.behaviour_mut().floodsub.publish(
             floodsub::Topic::new(SHARD_CHANNEL),
             "awesome postget message".as_bytes(),
         );
