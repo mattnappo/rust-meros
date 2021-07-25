@@ -52,34 +52,23 @@ impl FileID {
         true
     }
 
-    /// Convert to a hex string
-    pub fn to_hex(&self) -> String {
-        self.id.map(|b| format!("{:x}", b)).concat()
-    }
-
     /// Peek at the internal hash
     pub(super) fn id(&self) -> &hash::Hash {
         &self.id
     }
 
+    /// Convert to a hex string
+    pub fn to_hex(&self) -> String {
+        hex::encode(self.id)
+    }
+
     /// Convert from a hex string
-    pub fn from_hex(s: &str) -> Result<Self, Box<dyn Error>> {
-        let b: Vec<u8> = (0..s.len())
-            .step_by(2)
-            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
-            .collect();
-
-        if b.len() > crypto::hash::HASH_SIZE {
-            return Err(Box::new(GeneralError::new(
-                "invalid hex FileID to construct FileID",
-            )));
-        }
-
+    pub fn from_hex(s: &str) -> Result<Self, hex::FromHexError> {
+        let decoded = hex::decode(s)?;
         let mut id = [0u8; 32];
-        for (i, byte) in b.into_iter().enumerate() {
+        for (i, byte) in decoded.into_iter().enumerate() {
             id[i] = byte;
         }
-
         Ok(Self { id })
     }
 }
@@ -324,6 +313,8 @@ mod tests {
     fn hex() {
         let (fid, _) = FileID::new("filename", &vec![1u8, 2u8, 3u8]).unwrap();
 
+        println!("fid: {:?}", fid);
+
         let fid_string = fid.to_hex();
 
         println!("fid string: {}", fid_string);
@@ -332,6 +323,6 @@ mod tests {
 
         println!("deserialized fid: {:?}", new_fid);
 
-        assert!(fid == new_fid);
+        assert_eq!(fid, new_fid);
     }
 }
