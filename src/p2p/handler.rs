@@ -6,6 +6,9 @@ use libp2p::{
     },
 };
 
+use crate::primitives::file;
+use crate::CanSerialize;
+
 // This is what drives the client. When a client wants to publish a file, it
 // will do this (mainly the kademlia.get_record and kademlia.put_record)
 pub fn handle_stdin_line(
@@ -17,7 +20,11 @@ pub fn handle_stdin_line(
     match args.next() {
         Some("GET") => {
             let key = match args.next() {
-                Some(key) => Key::new(&key),
+                Some(key) => {
+                    let raw = file::FileID::from_hex(key)
+                        .expect("could not deserialzie fileid");
+                    Key::new(&raw.to_bytes().unwrap())
+                }
                 None => {
                     eprintln!("expected a key");
                     return;

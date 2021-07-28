@@ -393,6 +393,8 @@ impl Node {
 
         file_metadata.shard_config = new_config;
 
+        println!("HEX: {}", file_metadata.id.to_hex());
+
         // (2) Insert into the DHT the FileID which points to the relevant metadata.
         let record = Record {
             key: Key::new(&file_metadata.id.to_bytes()?),
